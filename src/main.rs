@@ -17,6 +17,7 @@ extern crate env_logger;
 extern crate clap;
 extern crate dns_lookup;
 extern crate hyper;
+extern crate parking_lot;
 
 use hyper::Uri;
 
@@ -28,6 +29,15 @@ use std::net;
 use dns_lookup::lookup_host;
 use tokio_tcp::TcpListener;
 use tokio::prelude::*;
+use tokio::io::{copy, shutdown};
+use tokio_tcp::{TcpStream, ConnectFuture};
+
+use futures::stream::*;
+use futures::sink::*;
+use parking_lot::Mutex;
+use std::sync::Arc;
+use std::io;
+use std::net::Shutdown;
 
 mod settings;
 mod proxy;
@@ -50,17 +60,87 @@ fn main() {
 
     builder.init();
 
+    let server_addr = sockaddr_from_uri(config.server.uri.as_str()).unwrap();
+
     let addr = (net::Ipv4Addr::new(0,0,0,0), config.listener.port).into();
     let listener = TcpListener::bind(&addr).unwrap();
 
-    // accept connections and process them
-    tokio::run(listener.incoming()
-        .map_err(|e| error!("failed to accept socket; error = {:?}", e))
-        .for_each(|socket| {
-            info!("Peer connected from {:?}", socket.peer_addr());
+    let done = listener.incoming()
+        .map_err(|e| error!("error accepting socket; error = {:?}", e))
+        .for_each(move |client| {
+            let server = TcpStream::connect(&server_addr);
+            let amounts = server.and_then(move |server| {
+                let client_reader = SharedStream::new(client);
+                let client_writer = client_reader.clone();
+                let server_reader = SharedStream::new(server);
+                let server_writer = server_reader.clone();
+
+                let client_to_server = proxy::detect_and_transmit(client_reader, server_writer)
+                    .and_then(|(n, _, server_writer)| {
+                        shutdown(server_writer).map(move |_| n)
+                    });
+
+                let server_to_client = proxy::transmit(server_reader, client_writer)
+                    .and_then(|(n, _, client_writer)| {
+                        shutdown(client_writer).map(move |_| n)
+                    });
+
+                client_to_server.join(server_to_client)
+            });
+
+            let msg = amounts.map(move |(from_client, from_server)| {
+//                info!("client wrote {} bytes and received {} bytes",
+//                         from_client, from_server);
+            }).map_err(|e| {
+                // Don't panic. Maybe the client just disconnected too soon.
+                error!("error: {}", e);
+            });
+
+            tokio::spawn(msg);
+
             Ok(())
-        })
-    );
+        });
+
+    tokio::run(done);
+}
+
+#[derive(Clone)]
+struct SharedStream {
+    socket: std::sync::Arc<Mutex<TcpStream>>,
+}
+
+impl SharedStream {
+    pub fn new(socket: TcpStream) -> Self {
+        SharedStream {
+            socket: std::sync::Arc::new(Mutex::new(socket))
+        }
+    }
+}
+
+impl Read for SharedStream {
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize, std::io::Error> {
+        self.socket.lock().read(buf)
+    }
+}
+
+impl Write for SharedStream {
+    fn write(&mut self, buf: &[u8]) -> Result<usize, std::io::Error> {
+        self.socket.lock().write(buf)
+    }
+
+    fn flush(&mut self) -> Result<(), std::io::Error> {
+        Ok(())
+    }
+}
+
+impl AsyncRead for SharedStream {}
+
+impl AsyncWrite for SharedStream {
+    fn shutdown(&mut self) -> Result<Async<()>, std::io::Error> {
+        self.socket.lock().shutdown(Shutdown::Write)?;
+
+        Ok(().into())
+    }
 }
 
 pub fn sockaddr_from_uri(uri: &str) -> Result<SocketAddr, String> {
@@ -69,7 +149,12 @@ pub fn sockaddr_from_uri(uri: &str) -> Result<SocketAddr, String> {
 
     let ip = {
         if let Ok(addrs) = get_addr_from_uri(&uri) {
-            addrs[0]
+            if let Some(ipv4) = addrs.iter().find(|ip| ip.is_ipv4()) {
+                ipv4.clone()
+            } else {
+                return Err(String::from(
+                    "No local ipV4Addr specified"));
+            }
         } else {
             return Err(String::from(
                 "No local ipAddr specified"));
