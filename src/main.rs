@@ -67,7 +67,7 @@ fn main() {
     let get = http_request.lookup("159.203.42.175");
     tokio::run(get.map(|res| { println!("Result: {:?}", res); }));
 
-    /*let server_addr = sockaddr_from_uri(config.server.uri.as_str()).unwrap();
+    let server_addr = sockaddr_from_uri(config.server.uri.as_str()).unwrap();
 
     let addr = (net::Ipv4Addr::new(0,0,0,0), config.listener.port).into();
     let listener = TcpListener::bind(&addr).unwrap();
@@ -108,7 +108,7 @@ fn main() {
             Ok(())
         });
 
-    tokio::run(done);*/
+    tokio::run(done);
 }
 
 #[derive(Clone)]
