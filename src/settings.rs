@@ -42,6 +42,8 @@ type Result<T> = std::result::Result<T, ConfigurationError>;
 #[serde(default)]
 pub struct Server {
     pub uri: String,
+    pub maxmind_id: String,
+    pub maxmind_password: String,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -70,7 +72,11 @@ impl Default for Settings {
     fn default() -> Self {
         Settings {
             loglevel: "info".to_string(),
-            server: Server { uri: "".to_string() },
+            server: Server {
+                uri: "".to_string(),
+                maxmind_id: "".to_string(),
+                maxmind_password: "".to_string()
+            },
             listener: Default::default(),
         }
     }
@@ -110,6 +116,14 @@ impl Settings {
         let mut settings: Settings = conf.try_into()?;
 
         // Apply command line arg
+
+        if let Some(id) = matches.value_of("maxmind-id") {
+            settings.server.maxmind_id = id.to_string();
+        }
+
+        if let Some(pass) = matches.value_of("maxmind-password") {
+            settings.server.maxmind_password = pass.to_string();
+        }
 
         if let Some(level) = matches.value_of("log-level") {
             settings.loglevel = level.to_string();
@@ -177,7 +191,7 @@ impl Settings {
 
 fn create_command_line_app<'a, 'b>() -> App<'a, 'b> {
     App::new(crate_name!())
-        .author("Richer Archambault - Devolutions")
+        .author("Richer Archambault & Seb Aubin - Devolutions")
         .version(concat!(crate_version!(), "\n"))
         .version_short("v")
         .about("A simple identity server")
@@ -211,6 +225,22 @@ fn create_command_line_app<'a, 'b>() -> App<'a, 'b> {
             .long("uri")
             .value_name("SERVER_URI")
             .help("Uri of the server behind the proxy")
+            .takes_value(true)
+            .empty_values(false)
+        )
+        .arg(Arg::with_name("maxmind-id")
+            .short("i")
+            .long("maxmindid")
+            .value_name("MAXMIND_ID")
+            .help("Maxmind ID")
+            .takes_value(true)
+            .empty_values(false)
+        )
+        .arg(Arg::with_name("maxmind-password")
+            .short("s")
+            .long("maxmindpass")
+            .value_name("MAXMIND_PASSWORD")
+            .help("Maxmind password")
             .takes_value(true)
             .empty_values(false)
         )

@@ -18,9 +18,10 @@ extern crate clap;
 extern crate dns_lookup;
 extern crate hyper;
 extern crate parking_lot;
+extern crate reqwest;
+extern crate base64;
 
 use hyper::Uri;
-
 use env_logger::Builder;
 use log::LevelFilter;
 use std::env;
@@ -38,9 +39,11 @@ use parking_lot::Mutex;
 use std::sync::Arc;
 use std::io;
 use std::net::Shutdown;
+use crate::http::request::HttpRequest;
 
 mod settings;
 mod proxy;
+mod http;
 
 fn main() {
     let config = settings::Settings::load().expect("Configuration errors are fatal");
@@ -59,6 +62,10 @@ fn main() {
     }
 
     builder.init();
+
+    let http_request = HttpRequest::new(&config.server.maxmind_id, &config.server.maxmind_password);
+    let get = http_request.lookup("159.203.42.175");
+    tokio::run(get.map(|res| { println!("Result: {:?}", res); }));
 
     let server_addr = sockaddr_from_uri(config.server.uri.as_str()).unwrap();
 
