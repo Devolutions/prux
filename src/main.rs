@@ -41,9 +41,16 @@ use std::io;
 use std::net::Shutdown;
 use crate::http::request::HttpRequest;
 
+pub type IpResolver = Arc<HttpRequest>;
+
 mod settings;
 mod proxy;
 mod http;
+
+pub fn ipv4addr_is_global(ip: &std::net::Ipv4Addr) -> bool {
+    !ip.is_private() && !ip.is_loopback() && !ip.is_link_local() &&
+        !ip.is_broadcast() && !ip.is_documentation() && !ip.is_unspecified()
+}
 
 fn main() {
     let config = settings::Settings::load().expect("Configuration errors are fatal");
@@ -63,29 +70,41 @@ fn main() {
 
     builder.init();
 
-    let http_request = HttpRequest::new(&config.server.maxmind_id, &config.server.maxmind_password);
-    let get = http_request.lookup("159.203.42.175");
-    tokio::run(get.map(|res| { println!("Result: {:?}", res); }));
+    let ip_resolver = Arc::new(HttpRequest::new(&config.server.maxmind_id, &config.server.maxmind_password));
 
     let server_addr = sockaddr_from_uri(config.server.uri.as_str()).unwrap();
 
-    let addr = (net::Ipv4Addr::new(0,0,0,0), config.listener.port).into();
+    let addr = (net::Ipv4Addr::new(0, 0, 0, 0), config.listener.port).into();
     let listener = TcpListener::bind(&addr).unwrap();
 
     let done = listener.incoming()
         .map_err(|e| error!("error accepting socket; error = {:?}", e))
         .for_each(move |client| {
             let server = TcpStream::connect(&server_addr);
+
+            let ipr = ip_resolver.clone();
             let amounts = server.and_then(move |server| {
+                let client_addr = client.peer_addr();
+
                 let client_reader = SharedStream::new(client);
                 let client_writer = client_reader.clone();
                 let server_reader = SharedStream::new(server);
                 let server_writer = server_reader.clone();
 
-                let client_to_server = proxy::detect_and_transmit(client_reader, server_writer)
-                    .and_then(|(n, _, server_writer)| {
-                        shutdown(server_writer).map(move |_| n)
-                    });
+                let shutdown_closure = |(n, _, server_writer)| {
+                    shutdown(server_writer).map(move |_| n)
+                };
+
+                let client_to_server = match client_addr {
+                    Ok(std::net::SocketAddr::V4(ip)) if ipv4addr_is_global(ip.ip()) => {
+                        proxy::start_transmit(client_reader, server_writer, Some((ip.ip().clone(), ipr)))
+                            .and_then(shutdown_closure)
+                    }
+                    _ => {
+                        proxy::start_transmit(client_reader, server_writer, None)
+                            .and_then(shutdown_closure)
+                    }
+                };
 
                 let server_to_client = proxy::transmit(server_reader, client_writer)
                     .and_then(|(n, _, client_writer)| {
@@ -95,13 +114,10 @@ fn main() {
                 client_to_server.join(server_to_client)
             });
 
-            let msg = amounts.map(move |(from_client, from_server)| {
-//                info!("client wrote {} bytes and received {} bytes",
-//                         from_client, from_server);
-            }).map_err(|e| {
-                // Don't panic. Maybe the client just disconnected too soon.
-                error!("error: {}", e);
-            });
+            let msg = amounts.map(|(_from_client, _from_server)| {})
+                .map_err(|e| {
+                    error!("error: {}", e);
+                });
 
             tokio::spawn(msg);
 
@@ -123,6 +139,9 @@ impl SharedStream {
         }
     }
 }
+
+unsafe impl std::marker::Send for SharedStream {}
+unsafe impl std::marker::Sync for SharedStream {}
 
 impl Read for SharedStream {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, std::io::Error> {

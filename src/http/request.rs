@@ -11,6 +11,7 @@ use serde_json::Value;
 use tokio::prelude::future::FutureResult;
 use reqwest::r#async::{Client, Response};
 use base64::encode;
+use std::net::Ipv4Addr;
 
 pub struct HttpRequest {
     client: Client,
@@ -30,7 +31,7 @@ impl HttpRequest {
         }
     }
 
-    pub fn lookup(&self, addr: &str) -> impl Future<Item=Value, Error=()> {
+    pub fn lookup(&self, addr: &Ipv4Addr) -> impl Future<Item=Value, Error=()> {
         let json = |mut res : Response | {
             let result = res.json::<Value>().map_err(|_|());
 

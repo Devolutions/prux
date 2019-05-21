@@ -1,47 +1,103 @@
 pub mod protocol;
+pub mod injector;
 
 use std::io;
 
 use futures::{Future, Poll};
+use std::net::Ipv4Addr;
 
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::prelude::*;
 use crate::proxy::protocol::Protocol;
+use crate::IpResolver;
+use crate::proxy::protocol::read_proto;
+use crate::proxy::protocol::ProtoReader;
 
-pub struct ProtoReader<R> where R: AsyncRead {
+fn find_bytes_pos(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack.windows(needle.len()).position(|window| window == needle)
+}
+
+pub fn start_transmit<R, W>(reader: R, writer: W, detect: Option<(Ipv4Addr, IpResolver)>) -> impl Future<Item=(u64, R, W), Error=io::Error> + Send
+    where R: AsyncRead + Send + 'static,
+          W: AsyncWrite + Send + 'static, {
+    read_proto(reader, detect.is_none()).and_then(move |(proto, reader, pos, cap, amt, buf)| {
+        if let (Protocol::Http11(_, _), Some(ipr)) = (&proto, detect) {
+            Box::new(injector::inject_basic_hdr(ipr).map_err(|_| io::Error::new(io::ErrorKind::WriteZero, "write zero byte into writer")).and_then(|vec| {
+                let buf_head_cap = find_bytes_pos(&buf, crate::proxy::injector::HDR_SEP).unwrap_or(0);
+                let buf_cap = buf.len();
+                let hdrs_cap = vec.len();
+                Injector {
+                    reader: Some(reader),
+                    writer: Some(writer),
+                    buf_pos: 0,
+                    buf_head_cap,
+                    buf_cap,
+                    buf: Some(buf),
+                    hdrs_pos: 0,
+                    hdrs_cap,
+                    hdrs: Some(vec),
+                }
+            }).and_then(move |(reader, writer, buf)| {
+                Trasmit {
+                    proto: Some(proto),
+                    reader: Some(reader),
+                    read_done: false,
+                    writer: Some(writer),
+                    pos: 0,
+                    cap: 0,
+                    amt: 0,
+                    buf,
+                }
+            })) as Box<Future<Item=(u64, R, W), Error=io::Error> + Send>
+        } else {
+            Box::new(Trasmit {
+                proto: Some(proto),
+                reader: Some(reader),
+                read_done: false,
+                writer: Some(writer),
+                amt,
+                pos,
+                cap,
+                buf,
+            }) as Box<Future<Item=(u64, R, W), Error=io::Error> + Send>
+        }
+    })
+}
+
+#[derive(Debug)]
+pub struct Injector<R, W> {
     reader: Option<R>,
-    read_done: bool,
-    pos: usize,
-    cap: usize,
-    amt: u64,
+    writer: Option<W>,
+    buf_pos: usize,
+    buf_head_cap: usize,
+    buf_cap: usize,
     buf: Option<Box<[u8]>>,
+    hdrs_pos: usize,
+    hdrs_cap: usize,
+    hdrs: Option<Vec<u8>>,
 }
 
-pub fn read_proto<R>(reader: R) -> ProtoReader<R> where R: AsyncRead {
-    ProtoReader {
-        reader: Some(reader),
-        read_done: false,
-        pos: 0,
-        cap: 0,
-        amt: 0,
-        buf: Some(Box::new([0u8; 2048])),
-    }
-}
-
-impl<R> Future for ProtoReader<R> where R: AsyncRead {
-    type Item = (Protocol, R, usize, usize, u64, Box<[u8]>);
+impl<R, W> Future for Injector<R, W>
+    where R: AsyncRead,
+          W: AsyncWrite,
+{
+    type Item = (R, W, Box<[u8]>);
     type Error = io::Error;
 
     fn poll(&mut self) -> Result<Async<Self::Item>, Self::Error> {
-        if self.pos == self.cap && !self.read_done {
-            let reader = self.reader.as_mut().unwrap();
-            match reader.poll_read(self.buf.as_mut().unwrap()) {
-                Ok(Async::Ready(n)) => {
-                    if n == 0 {
-                        self.read_done = true;
+
+        // write the head of the http 1.1 req
+        while self.buf_pos < self.buf_head_cap {
+            let writer = self.writer.as_mut().unwrap();
+            let buf = self.buf.as_mut().unwrap();
+            let writer = self.writer.as_mut().unwrap();
+            match writer.poll_write(&buf[self.buf_pos..self.buf_head_cap]) {
+                Ok(Async::Ready(i)) => {
+                    if i == 0 {
+                        return Err(io::Error::new(io::ErrorKind::WriteZero,
+                                                  "write zero byte into writer"));
                     } else {
-                        self.pos = 0;
-                        self.cap = n;
+                        self.buf_pos += i;
                     }
                 }
                 Ok(Async::NotReady) => {
@@ -51,28 +107,61 @@ impl<R> Future for ProtoReader<R> where R: AsyncRead {
             }
         }
 
-        let protocol = Protocol::detect(self.buf.as_mut().unwrap());
-
-        return Ok((protocol, self.reader.take().unwrap(), self.pos, self.cap, self.amt, self.buf.take().unwrap()).into());
-    }
-}
-
-pub fn detect_and_transmit<R, W>(reader: R, writer: W) -> futures::future::AndThen<ProtoReader<R>, Trasmit<R, W>, impl FnOnce((Protocol, R, usize, usize, u64, Box<[u8]>)) -> Trasmit<R, W>>
-    where R: AsyncRead,
-          W: AsyncWrite, {
-    read_proto(reader).and_then(move |(proto, reader, pos, cap, amt, buf)| {
-        info!("{:?}", proto);
-        Trasmit {
-            proto: Some(proto),
-            reader: Some(reader),
-            read_done: false,
-            writer: Some(writer),
-            amt,
-            pos,
-            cap,
-            buf,
+        // write injected hdrs
+        while self.hdrs_pos < self.hdrs_cap {
+            let writer = self.writer.as_mut().unwrap();
+            let hdrs_buf = self.hdrs.as_mut().unwrap();
+            match writer.poll_write(&hdrs_buf[self.hdrs_pos..self.hdrs_cap]) {
+                Ok(Async::Ready(i)) => {
+                    if i == 0 {
+                        return Err(io::Error::new(io::ErrorKind::WriteZero,
+                                                  "write zero byte into writer"));
+                    } else {
+                        self.hdrs_pos += i;
+                    }
+                }
+                Ok(Async::NotReady) => {
+                    return Ok(Async::NotReady);
+                }
+                Err(e) => return Err(e),
+            }
         }
-    })
+
+        // write the rest
+        while self.buf_pos < self.buf_cap {
+            let writer = self.writer.as_mut().unwrap();
+            let buf = self.buf.as_mut().unwrap();
+            match writer.poll_write(&buf[self.buf_pos..self.buf_cap]) {
+                Ok(Async::Ready(i)) => {
+                    if i == 0 {
+                        return Err(io::Error::new(io::ErrorKind::WriteZero,
+                                                  "write zero byte into writer"));
+                    } else {
+                        self.buf_pos += i;
+                    }
+                }
+                Ok(Async::NotReady) => {
+                    return Ok(Async::NotReady);
+                }
+                Err(e) => return Err(e),
+            }
+        }
+
+        // If we've written al the data and we've seen EOF, flush out the
+        // data and finish the transfer.
+        // done with the entire transfer.
+        match self.writer.as_mut().unwrap().poll_flush() {
+            Ok(Async::Ready(())) => {}
+            Ok(Async::NotReady) => {
+                return Ok(Async::NotReady);
+            }
+            Err(e) => return Err(e),
+        }
+        let reader = self.reader.take().unwrap();
+        let writer = self.writer.take().unwrap();
+        let but = self.buf.take().unwrap();
+        Ok((reader, writer, but).into())
+    }
 }
 
 #[derive(Debug)]
