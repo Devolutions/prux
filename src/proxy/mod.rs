@@ -2,6 +2,7 @@ pub mod protocol;
 pub mod injector;
 
 use std::io;
+use std::string::String;
 
 use futures::{Future, Poll};
 use std::net::Ipv4Addr;
@@ -14,7 +15,7 @@ use crate::proxy::protocol::read_proto;
 use crate::proxy::protocol::ProtoReader;
 
 fn find_bytes_pos(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-    haystack.windows(needle.len()).position(|window| window == needle)
+    haystack.windows(needle.len()).position(|window| window == needle).and_then(|pos| Some(pos + needle.len()))
 }
 
 pub fn start_transmit<R, W>(reader: R, writer: W, detect: Option<(Ipv4Addr, IpResolver)>) -> impl Future<Item=(u64, R, W), Error=io::Error> + Send
@@ -22,8 +23,8 @@ pub fn start_transmit<R, W>(reader: R, writer: W, detect: Option<(Ipv4Addr, IpRe
           W: AsyncWrite + Send + 'static, {
     read_proto(reader, detect.is_none()).and_then(move |(proto, reader, pos, cap, amt, buf)| {
         if let (Protocol::Http11(_, _), Some(ipr)) = (&proto, detect) {
-            Box::new(injector::inject_basic_hdr(ipr).map_err(|_| io::Error::new(io::ErrorKind::WriteZero, "write zero byte into writer")).and_then(|vec| {
-                let buf_head_cap = find_bytes_pos(&buf, crate::proxy::injector::HDR_SEP).unwrap_or(0);
+            Box::new(injector::inject_basic_hdr(ipr).map_err(|_| io::Error::new(io::ErrorKind::WriteZero, "write zero byte into writer")).and_then(|vec: Vec<u8>| {
+                let buf_head_cap = find_bytes_pos(&buf, crate::proxy::injector::HDR_SEP).unwrap();
                 let buf_cap = buf.len();
                 let hdrs_cap = vec.len();
                 Injector {
@@ -38,7 +39,7 @@ pub fn start_transmit<R, W>(reader: R, writer: W, detect: Option<(Ipv4Addr, IpRe
                     hdrs: Some(vec),
                 }
             }).and_then(move |(reader, writer, buf)| {
-                Trasmit {
+                Transmit {
                     proto: Some(proto),
                     reader: Some(reader),
                     read_done: false,
@@ -50,7 +51,7 @@ pub fn start_transmit<R, W>(reader: R, writer: W, detect: Option<(Ipv4Addr, IpRe
                 }
             })) as Box<Future<Item=(u64, R, W), Error=io::Error> + Send>
         } else {
-            Box::new(Trasmit {
+            Box::new(Transmit {
                 proto: Some(proto),
                 reader: Some(reader),
                 read_done: false,
@@ -147,7 +148,7 @@ impl<R, W> Future for Injector<R, W>
             }
         }
 
-        // If we've written al the data and we've seen EOF, flush out the
+        // If we've written all the data and we've seen EOF, flush out the
         // data and finish the transfer.
         // done with the entire transfer.
         match self.writer.as_mut().unwrap().poll_flush() {
@@ -157,15 +158,16 @@ impl<R, W> Future for Injector<R, W>
             }
             Err(e) => return Err(e),
         }
+
         let reader = self.reader.take().unwrap();
         let writer = self.writer.take().unwrap();
-        let but = self.buf.take().unwrap();
-        Ok((reader, writer, but).into())
+        let buf = self.buf.take().unwrap();
+        Ok((reader, writer, buf).into())
     }
 }
 
 #[derive(Debug)]
-pub struct Trasmit<R, W> {
+pub struct Transmit<R, W> {
     proto: Option<Protocol>,
     reader: Option<R>,
     read_done: bool,
@@ -176,11 +178,11 @@ pub struct Trasmit<R, W> {
     buf: Box<[u8]>,
 }
 
-pub fn transmit<R, W>(reader: R, writer: W) -> Trasmit<R, W>
+pub fn transmit<R, W>(reader: R, writer: W) -> Transmit<R, W>
     where R: AsyncRead,
           W: AsyncWrite,
 {
-    Trasmit {
+    Transmit {
         proto: None,
         reader: Some(reader),
         read_done: false,
@@ -192,7 +194,7 @@ pub fn transmit<R, W>(reader: R, writer: W) -> Trasmit<R, W>
     }
 }
 
-impl<R, W> Future for Trasmit<R, W>
+impl<R, W> Future for Transmit<R, W>
     where R: AsyncRead,
           W: AsyncWrite,
 {

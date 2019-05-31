@@ -29,9 +29,7 @@ impl<R> Future for ProtoReader<R> where R: AsyncRead {
     fn poll(&mut self) -> Result<Async<Self::Item>, Self::Error> {
         if self.pos == self.cap && !self.read_done {
             let reader = self.reader.as_mut().unwrap();
-            let buf = self.buf.as_mut().unwrap();
-            let sub_buf = &mut buf[0..1024];
-            match reader.poll_read(sub_buf) {
+            match reader.poll_read(self.buf.as_mut().unwrap()) {
                 Ok(Async::Ready(n)) => {
                     if n == 0 {
                         self.read_done = true;
