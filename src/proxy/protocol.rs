@@ -1,4 +1,55 @@
 use httparse;
+use tokio::prelude::*;
+use tokio::io;
+
+pub struct ProtoReader<R> where R: AsyncRead {
+    reader: Option<R>,
+    read_done: bool,
+    pos: usize,
+    cap: usize,
+    amt: u64,
+    buf: Option<Box<[u8]>>,
+}
+
+pub fn read_proto<R>(reader: R, skip_read: bool) -> ProtoReader<R> where R: AsyncRead {
+    ProtoReader {
+        reader: Some(reader),
+        read_done: skip_read,
+        pos: 0,
+        cap: 0,
+        amt: 0,
+        buf: Some(Box::new([0u8; 2048])),
+    }
+}
+
+impl<R> Future for ProtoReader<R> where R: AsyncRead {
+    type Item = (Protocol, R, usize, usize, u64, Box<[u8]>);
+    type Error = io::Error;
+
+    fn poll(&mut self) -> Result<Async<Self::Item>, Self::Error> {
+        if self.pos == self.cap && !self.read_done {
+            let reader = self.reader.as_mut().unwrap();
+            match reader.poll_read(self.buf.as_mut().unwrap()) {
+                Ok(Async::Ready(n)) => {
+                    if n == 0 {
+                        self.read_done = true;
+                    } else {
+                        self.pos = 0;
+                        self.cap = n;
+                    }
+                }
+                Ok(Async::NotReady) => {
+                    return Ok(Async::NotReady);
+                }
+                Err(e) => return Err(e),
+            }
+        }
+
+        let protocol = Protocol::detect(self.buf.as_mut().unwrap());
+
+        return Ok((protocol, self.reader.take().unwrap(), self.pos, self.cap, self.amt, self.buf.take().unwrap()).into());
+    }
+}
 
 #[derive(Debug)]
 pub enum Protocol {

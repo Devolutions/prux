@@ -111,7 +111,7 @@ impl Settings {
             conf.merge(ConfigFile::with_name(CONFIGURATION_FILE_NAME).required(false))?;
         }
 
-        conf.merge(Environment::with_prefix("prux").separator("_"))?;
+        conf.merge(Environment::with_prefix("prux").separator("__"))?;
 
         let mut settings: Settings = conf.try_into()?;
 
