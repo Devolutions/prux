@@ -1,8 +1,8 @@
 pub mod protocol;
 pub mod injector;
+pub mod stream_collection;
 
 use std::io;
-use std::string::String;
 
 use futures::{Future, Poll};
 use std::net::Ipv4Addr;
@@ -12,7 +12,6 @@ use tokio::prelude::*;
 use crate::proxy::protocol::Protocol;
 use crate::IpResolver;
 use crate::proxy::protocol::read_proto;
-use crate::proxy::protocol::ProtoReader;
 
 fn find_bytes_pos(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     haystack.windows(needle.len()).position(|window| window == needle).and_then(|pos| Some(pos + needle.len()))

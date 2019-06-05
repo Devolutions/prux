@@ -4,7 +4,6 @@ extern crate tokio_tcp;
 extern crate futures;
 #[macro_use]
 extern crate serde_derive;
-#[macro_use]
 extern crate serde_json;
 extern crate serde_yaml;
 extern crate serde;
@@ -25,21 +24,22 @@ use hyper::Uri;
 use env_logger::Builder;
 use log::LevelFilter;
 use std::env;
-use std::net::SocketAddr;
+use std::net::{SocketAddr, Ipv4Addr};
 use std::net;
 use dns_lookup::lookup_host;
 use tokio_tcp::TcpListener;
 use tokio::prelude::*;
-use tokio::io::{copy, shutdown};
-use tokio_tcp::{TcpStream, ConnectFuture};
+use tokio::io::shutdown;
+use tokio_tcp::TcpStream;
 
-use futures::stream::*;
-use futures::sink::*;
 use parking_lot::Mutex;
 use std::sync::Arc;
-use std::io;
 use std::net::Shutdown;
 use crate::http::request::HttpRequest;
+use crate::proxy::stream_collection::Streams;
+use std::sync::mpsc::TrySendError::Full;
+use crossbeam_channel::bounded;
+use crate::proxy::stream_collection;
 
 pub type IpResolver = Arc<HttpRequest>;
 
@@ -77,52 +77,64 @@ fn main() {
     let addr = (net::Ipv4Addr::new(0, 0, 0, 0), config.listener.port).into();
     let listener = TcpListener::bind(&addr).unwrap();
 
-    let done = listener.incoming()
-        .map_err(|e| error!("error accepting socket; error = {:?}", e))
-        .for_each(move |client| {
-            let server = TcpStream::connect(&server_addr);
+    let (tx, rx) = bounded(stream_collection::MAX);
+    let server = Streams::new(server_addr, tx);
 
-            let ipr = ip_resolver.clone();
-            let amounts = server.and_then(move |server| {
-                let client_addr = client.peer_addr();
+    let done = future::lazy(|| {
+        tokio::spawn(server.for_each(|_| Ok(())).map(|_| ()).map_err(|_| ()));
+        Ok(())
+    }).and_then(move |_| {
+        listener.incoming()
+            .map_err(|e| error!("error accepting socket; error = {:?}", e))
+            .for_each(move |client| {
+                let ipr = ip_resolver.clone();
+                let socket = rx.recv();
+                match socket {
+                    Ok(server_stream) => {
+                        let client_addr = client.peer_addr();
 
-                let client_reader = SharedStream::new(client);
-                let client_writer = client_reader.clone();
-                let server_reader = SharedStream::new(server);
-                let server_writer = server_reader.clone();
+                        let client_reader = SharedStream::new(client);
+                        let client_writer = client_reader.clone();
+                        let server_reader = SharedStream::new(server_stream);
+                        let server_writer = server_reader.clone();
 
-                let shutdown_closure = |(n, _, server_writer)| {
-                    shutdown(server_writer).map(move |_| n)
-                };
+                        let shutdown_closure = |(n, _, server_writer)| {
+                            shutdown(server_writer).map(move |_| n)
+                        };
 
-                let client_to_server = match client_addr {
-                    Ok(std::net::SocketAddr::V4(ip)) if ipv4addr_is_global(ip.ip()) => {
-                        proxy::start_transmit(client_reader, server_writer, Some((ip.ip().clone(), ipr)))
-                            .and_then(shutdown_closure)
+                        let client_to_server = match client_addr {
+                            Ok(std::net::SocketAddr::V4(ip)) if ipv4addr_is_global(ip.ip()) => {
+                                proxy::start_transmit(client_reader, server_writer, Some((ip.ip().clone(), ipr)))
+                                    .and_then(shutdown_closure)
+                            }
+                            _ => {
+                                proxy::start_transmit(client_reader, server_writer, None)
+                                    .and_then(shutdown_closure)
+                            }
+                        };
+
+                        let server_to_client = proxy::transmit(server_reader, client_writer)
+                            .and_then(|(n, _, client_writer)| {
+                                shutdown(client_writer).map(move |_| n)
+                            });
+
+                        let msg = client_to_server.join(server_to_client).map(|(_from_client, _from_server)| {})
+                            .map_err(|e| {
+                                error!("error: {}", e);
+                            });
+
+                        tokio::spawn(msg);
+
+                        Ok(())
                     }
-                    _ => {
-                        proxy::start_transmit(client_reader, server_writer, None)
-                            .and_then(shutdown_closure)
+
+                    Err(e) => {
+                        error!("error: {}", e);
+                        Err(())
                     }
-                };
-
-                let server_to_client = proxy::transmit(server_reader, client_writer)
-                    .and_then(|(n, _, client_writer)| {
-                        shutdown(client_writer).map(move |_| n)
-                    });
-
-                client_to_server.join(server_to_client)
-            });
-
-            let msg = amounts.map(|(_from_client, _from_server)| {})
-                .map_err(|e| {
-                    error!("error: {}", e);
-                });
-
-            tokio::spawn(msg);
-
-            Ok(())
-        });
+                }
+            })
+    });
 
     tokio::run(done);
 }
@@ -141,6 +153,7 @@ impl SharedStream {
 }
 
 unsafe impl std::marker::Send for SharedStream {}
+
 unsafe impl std::marker::Sync for SharedStream {}
 
 impl Read for SharedStream {
@@ -187,8 +200,8 @@ pub fn sockaddr_from_uri(uri: &str) -> Result<SocketAddr, String> {
         }
     };
 
-    if let Some(p) = uri.port() {
-        port = p
+    if let Some(p) = uri.port_part() {
+        port = p.as_u16();
     } else {
         return Err("colisse".to_string());
     }

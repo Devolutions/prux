@@ -1,10 +1,5 @@
-use std::io;
-
-use futures::{Future, Poll};
-
-use tokio::io::{AsyncRead, AsyncWrite};
+use futures::Future;
 use tokio::prelude::*;
-use crate::proxy::protocol::Protocol;
 use std::net::Ipv4Addr;
 use crate::IpResolver;
 use serde_json::Value;

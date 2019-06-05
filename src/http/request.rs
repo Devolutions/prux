@@ -1,14 +1,7 @@
 use tokio::prelude::*;
-use std::io::Cursor;
-use std::io;
-use reqwest::r#async::Decoder;
-use std::mem::replace;
-use core::mem;
-use reqwest::r#async::Chunk;
 use hyper::HeaderMap;
 use hyper::header::AUTHORIZATION;
 use serde_json::Value;
-use tokio::prelude::future::FutureResult;
 use reqwest::r#async::{Client, Response};
 use base64::encode;
 use std::net::Ipv4Addr;
