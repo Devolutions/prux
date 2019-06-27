@@ -5,36 +5,57 @@ use serde_json::Value;
 use reqwest::r#async::{Client, Response};
 use base64::encode;
 use std::net::Ipv4Addr;
+use hashbrown::HashMap;
+use parking_lot::RwLock;
+use std::sync::Arc;
 
+pub struct Inner {
+    pub client: Client,
+    pub headers: HeaderMap,
+    pub cache: RwLock<HashMap<String, Value>>,
+}
+
+#[derive(Clone)]
 pub struct HttpRequest {
-    client: Client,
-    headers: HeaderMap
+    inner: Arc<Inner>,
 }
 
 impl HttpRequest {
-    pub fn new(id: &str, password: &str) -> Self{
+    pub fn new(id: &str, password: &str) -> Self {
         let mut headers = HeaderMap::new();
         let encoded = encode(&format!("{}:{}", id, password));
 
         headers.append(AUTHORIZATION, format!("Basic {}", encoded).parse().unwrap());
 
-        HttpRequest{
-            client: Client::new(),
-            headers
+        HttpRequest {
+            inner: Arc::new(Inner {
+                client: Client::new(),
+                headers,
+                cache: RwLock::new(HashMap::new()),
+            })
         }
     }
 
     pub fn lookup(&self, addr: &Ipv4Addr) -> impl Future<Item=Value, Error=()> {
-        let json = |mut res : Response | {
-            let result = res.json::<Value>().map_err(|_|());
+        let self_lazy = self.clone();
 
-            result
-        };
+        let addr_str = format!("{}", addr);
 
-        self.client
-            .get(&format!("https://geoip.maxmind.com/geoip/v2.1/city/{}", addr))
-            .headers(self.headers.clone())
-            .send().map_err(|_| ())
-            .and_then(json)
+        let lazy = future::lazy(move || {
+            self_lazy.inner.cache.read().get(&addr_str).map(|v| v.clone()).ok_or_else(move || addr_str).map_err(|addr| (self_lazy.clone(), addr))
+        }).or_else(move |(self_req, addr)| {
+            self_req.inner.client
+                .get(&format!("https://geoip.maxmind.com/geoip/v2.1/city/{}", addr))
+                .headers(self_req.inner.headers.clone())
+                .send().map_err(|_| ())
+                .and_then(|mut res: Response| {
+                    let result = res.json::<Value>().map_err(|_| ());
+                    result
+                }).inspect(move |value| {
+                self_req.inner.cache.write().insert(addr, value.clone());
+            })
+        });
+
+        lazy
     }
 }
