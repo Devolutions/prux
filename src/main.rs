@@ -51,6 +51,7 @@ mod settings;
 mod proxy;
 mod http;
 mod utils;
+mod priority_map;
 
 pub fn ipv4addr_is_global(ip: &std::net::Ipv4Addr) -> bool {
     !ip.is_private() && !ip.is_loopback() && !ip.is_link_local() &&

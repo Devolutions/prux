@@ -5,14 +5,14 @@ use serde_json::Value;
 use reqwest::r#async::{Client, Response};
 use base64::encode;
 use std::net::Ipv4Addr;
-use hashbrown::HashMap;
 use parking_lot::RwLock;
 use std::sync::Arc;
+use crate::priority_map::PriorityMap;
 
 pub struct Inner {
     pub client: Client,
     pub headers: HeaderMap,
-    pub cache: RwLock<HashMap<String, Value>>,
+    pub cache: RwLock<PriorityMap<String, Value>>,
 }
 
 #[derive(Clone)]
@@ -31,7 +31,7 @@ impl HttpRequest {
             inner: Arc::new(Inner {
                 client: Client::new(),
                 headers,
-                cache: RwLock::new(HashMap::new()),
+                cache: RwLock::new(PriorityMap::new()),
             })
         }
     }
