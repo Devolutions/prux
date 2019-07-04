@@ -1,263 +1,138 @@
-pub mod protocol;
 pub mod injector;
-
 use std::io;
-use std::string::String;
 
 use futures::{Future, Poll};
-use std::net::Ipv4Addr;
+use std::net::{Ipv4Addr, SocketAddr};
 
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::prelude::*;
-use crate::proxy::protocol::Protocol;
 use crate::IpResolver;
-use crate::proxy::protocol::read_proto;
-use crate::proxy::protocol::ProtoReader;
+use crate::utils;
+use bytes::{Buf, BufMut};
+use ::{futures, httparse};
+use std::io::Cursor;
+use hyper::{Body, Request, Client, Response, Uri, StatusCode};
+use hyper::http;
+use hyper::client::{ResponseFuture, HttpConnector};
+use hyper::header::{HeaderValue, HeaderName};
+use hyper::service::Service;
+use futures::future::{FutureResult, Either};
+use hyper::http::Version;
+use hashbrown::HashMap;
+use httparse::Error;
+use crate::utils::UriPathMatcher;
 
-fn find_bytes_pos(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-    haystack.windows(needle.len()).position(|window| window == needle).and_then(|pos| Some(pos + needle.len()))
+pub struct Proxy {
+    pub upstream_addr: SocketAddr,
+    pub source: Option<(Ipv4Addr, IpResolver)>,
+    pub client: Client<HttpConnector>,
+    pub path_inclusions: Vec<UriPathMatcher>,
+    pub path_exclusions: Option<Vec<UriPathMatcher>>,
 }
 
-pub fn start_transmit<R, W>(reader: R, writer: W, detect: Option<(Ipv4Addr, IpResolver)>) -> impl Future<Item=(u64, R, W), Error=io::Error> + Send
-    where R: AsyncRead + Send + 'static,
-          W: AsyncWrite + Send + 'static, {
-    read_proto(reader, detect.is_none()).and_then(move |(proto, reader, pos, cap, amt, buf)| {
-        if let (Protocol::Http11(_, _), Some(ipr)) = (&proto, detect) {
-            Box::new(injector::inject_basic_hdr(ipr).map_err(|_| io::Error::new(io::ErrorKind::WriteZero, "write zero byte into writer")).and_then(|vec: Vec<u8>| {
-                let buf_head_cap = find_bytes_pos(&buf, crate::proxy::injector::HDR_SEP).unwrap();
-                let buf_cap = buf.len();
-                let hdrs_cap = vec.len();
-                Injector {
-                    reader: Some(reader),
-                    writer: Some(writer),
-                    buf_pos: 0,
-                    buf_head_cap,
-                    buf_cap,
-                    buf: Some(buf),
-                    hdrs_pos: 0,
-                    hdrs_cap,
-                    hdrs: Some(vec),
-                }
-            }).and_then(move |(reader, writer, buf)| {
-                Transmit {
-                    proto: Some(proto),
-                    reader: Some(reader),
-                    read_done: false,
-                    writer: Some(writer),
-                    pos: 0,
-                    cap: 0,
-                    amt: 0,
-                    buf,
-                }
-            })) as Box<Future<Item=(u64, R, W), Error=io::Error> + Send>
-        } else {
-            Box::new(Transmit {
-                proto: Some(proto),
-                reader: Some(reader),
-                read_done: false,
-                writer: Some(writer),
-                amt,
-                pos,
-                cap,
-                buf,
-            }) as Box<Future<Item=(u64, R, W), Error=io::Error> + Send>
+impl Proxy {
+    pub fn new (upstream_addr: SocketAddr, source: Option<(Ipv4Addr, IpResolver)>, client: Client<HttpConnector>, inclusions: Vec<String>, exclusions: Option<Vec<String>>,) -> Self {
+        Proxy {
+            upstream_addr,
+            source,
+            client,
+            path_inclusions: inclusions.iter().filter_map(|p| UriPathMatcher::new(p).map_err(|e| error!("Unable to construct included middleware route: {}", e)).ok()).collect(),
+            path_exclusions: exclusions.map(|ex| ex.iter().filter_map(|p| UriPathMatcher::new(p).map_err(|e| error!("Unable to construct excluded middleware route: {}", e)).ok()).collect()),
         }
+    }
+
+    pub fn validate_path(&self, path: &str) -> bool {
+        if self.path_inclusions.is_empty() {
+            return true;
+        }
+
+        if self.path_inclusions.iter().any(|m_p| m_p.match_start(path)) {
+            if let Some(ref path_exclusions) = self.path_exclusions {
+                return !path_exclusions.iter().any(|m_e_p| m_e_p.match_start(path));
+            } else {
+                return true;
+            }
+        }
+
+        false
+    }
+
+}
+
+#[derive(Debug)]
+pub struct StringError(String);
+
+impl std::fmt::Display for StringError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl std::error::Error for StringError {}
+
+fn gen_transmit_fut(client: &Client<HttpConnector>, req: Request<Body>) -> impl Future<Item=Response<Body>, Error=StringError> + Send {
+    client.request(req).map_err(|_| StringError("".to_string())).then(|result| {
+        let our_response = match result.map_err(|_| StringError("".to_string())) {
+            Ok(mut response) => {
+                let version = match response.version() {
+                    Version::HTTP_09 => "0.9",
+                    Version::HTTP_10 => "1.0",
+                    Version::HTTP_11 => "1.1",
+                    Version::HTTP_2 => "2.0",
+                    _ => "?",
+                };
+                {
+                    let mut headers = response.headers_mut();
+
+                    headers.append("proxy-info", HeaderValue::from_str(format!("{} prux-0.0.1", version).as_str()).expect("should be ok"));
+                }
+
+                response
+            }
+            Err(e) => {
+                error!("hyper error: {}", e);
+                let mut response = Response::new(Body::from("Something went wrong, please try again later."));
+                let (mut parts, body) = response.into_parts();
+                parts.status = StatusCode::BAD_GATEWAY;
+                response = Response::from_parts(parts, body);
+
+                response
+            }
+        };
+        futures::future::ok(our_response)
     })
 }
 
-#[derive(Debug)]
-pub struct Injector<R, W> {
-    reader: Option<R>,
-    writer: Option<W>,
-    buf_pos: usize,
-    buf_head_cap: usize,
-    buf_cap: usize,
-    buf: Option<Box<[u8]>>,
-    hdrs_pos: usize,
-    hdrs_cap: usize,
-    hdrs: Option<Vec<u8>>,
-}
+impl Service for Proxy {
+    type ReqBody = Body;
+    type ResBody = Body;
+    type Error = StringError;
+    type Future = Box<Future<Item=Response<Body>, Error=StringError> + Send>;
 
-impl<R, W> Future for Injector<R, W>
-    where R: AsyncRead,
-          W: AsyncWrite,
-{
-    type Item = (R, W, Box<[u8]>);
-    type Error = io::Error;
-
-    fn poll(&mut self) -> Result<Async<Self::Item>, Self::Error> {
-
-        // write the head of the http 1.1 req
-        while self.buf_pos < self.buf_head_cap {
-            let writer = self.writer.as_mut().unwrap();
-            let buf = self.buf.as_mut().unwrap();
-            let writer = self.writer.as_mut().unwrap();
-            match writer.poll_write(&buf[self.buf_pos..self.buf_head_cap]) {
-                Ok(Async::Ready(i)) => {
-                    if i == 0 {
-                        return Err(io::Error::new(io::ErrorKind::WriteZero,
-                                                  "write zero byte into writer"));
-                    } else {
-                        self.buf_pos += i;
+    fn call(&mut self, req: Request<Self::ReqBody>) -> Self::Future {
+        let last_part = if let Some(path) = req.uri().path_and_query() {
+            path.as_str()
+        } else {
+            "/"
+        };
+        let upstream_uri = format!("http://{}{}", &self.upstream_addr.to_string(), last_part.to_string());
+        let (mut parts, body) = req.into_parts();
+        parts.uri = upstream_uri.parse().expect("Url must be valid");
+        let mut outgoing_request = Request::from_parts(parts, body);
+        if let Some(ipr) = self.source.clone() {
+            if self.validate_path(outgoing_request.uri().path()) {
+                let client = self.client.clone();
+                Box::new(injector::inject_basic_hdr(ipr).map_err(|_| StringError("injection failed".to_string())).and_then(move |header_map| {
+                    for (header, value) in header_map {
+                        outgoing_request.headers_mut().insert(HeaderName::from_bytes(header.as_bytes()).expect("should be ok"), HeaderValue::from_str(value.as_str()).expect("should be ok"));
                     }
-                }
-                Ok(Async::NotReady) => {
-                    return Ok(Async::NotReady);
-                }
-                Err(e) => return Err(e),
+                    gen_transmit_fut(&client, outgoing_request)
+                })) as Box<Future<Item=Response<Body>, Error=StringError> + Send>
+            } else {
+                Box::new(gen_transmit_fut(&self.client, outgoing_request)) as Box<Future<Item=Response<Body>, Error=StringError> + Send>
             }
-        }
-
-        // write injected hdrs
-        while self.hdrs_pos < self.hdrs_cap {
-            let writer = self.writer.as_mut().unwrap();
-            let hdrs_buf = self.hdrs.as_mut().unwrap();
-            match writer.poll_write(&hdrs_buf[self.hdrs_pos..self.hdrs_cap]) {
-                Ok(Async::Ready(i)) => {
-                    if i == 0 {
-                        return Err(io::Error::new(io::ErrorKind::WriteZero,
-                                                  "write zero byte into writer"));
-                    } else {
-                        self.hdrs_pos += i;
-                    }
-                }
-                Ok(Async::NotReady) => {
-                    return Ok(Async::NotReady);
-                }
-                Err(e) => return Err(e),
-            }
-        }
-
-        // write the rest
-        while self.buf_pos < self.buf_cap {
-            let writer = self.writer.as_mut().unwrap();
-            let buf = self.buf.as_mut().unwrap();
-            match writer.poll_write(&buf[self.buf_pos..self.buf_cap]) {
-                Ok(Async::Ready(i)) => {
-                    if i == 0 {
-                        return Err(io::Error::new(io::ErrorKind::WriteZero,
-                                                  "write zero byte into writer"));
-                    } else {
-                        self.buf_pos += i;
-                    }
-                }
-                Ok(Async::NotReady) => {
-                    return Ok(Async::NotReady);
-                }
-                Err(e) => return Err(e),
-            }
-        }
-
-        // If we've written all the data and we've seen EOF, flush out the
-        // data and finish the transfer.
-        // done with the entire transfer.
-        match self.writer.as_mut().unwrap().poll_flush() {
-            Ok(Async::Ready(())) => {}
-            Ok(Async::NotReady) => {
-                return Ok(Async::NotReady);
-            }
-            Err(e) => return Err(e),
-        }
-
-        let reader = self.reader.take().unwrap();
-        let writer = self.writer.take().unwrap();
-        let buf = self.buf.take().unwrap();
-        Ok((reader, writer, buf).into())
-    }
-}
-
-#[derive(Debug)]
-pub struct Transmit<R, W> {
-    proto: Option<Protocol>,
-    reader: Option<R>,
-    read_done: bool,
-    writer: Option<W>,
-    pos: usize,
-    cap: usize,
-    amt: u64,
-    buf: Box<[u8]>,
-}
-
-pub fn transmit<R, W>(reader: R, writer: W) -> Transmit<R, W>
-    where R: AsyncRead,
-          W: AsyncWrite,
-{
-    Transmit {
-        proto: None,
-        reader: Some(reader),
-        read_done: false,
-        writer: Some(writer),
-        amt: 0,
-        pos: 0,
-        cap: 0,
-        buf: Box::new([0u8; 2048]),
-    }
-}
-
-impl<R, W> Future for Transmit<R, W>
-    where R: AsyncRead,
-          W: AsyncWrite,
-{
-    type Item = (u64, R, W);
-    type Error = io::Error;
-
-    fn poll(&mut self) -> Poll<(u64, R, W), tokio::io::Error> {
-        loop {
-            // If our buffer is empty, then we need to read some data to
-            // continue.
-            if self.pos == self.cap && !self.read_done {
-                let reader = self.reader.as_mut().unwrap();
-                match reader.poll_read(&mut self.buf) {
-                    Ok(Async::Ready(n)) => {
-                        if n == 0 {
-                            self.read_done = true;
-                        } else {
-                            self.pos = 0;
-                            self.cap = n;
-                        }
-                    }
-                    Ok(Async::NotReady) => {
-                        return Ok(Async::NotReady);
-                    }
-                    Err(e) => return Err(e),
-                }
-            }
-
-            // If our buffer has some data, let's write it out!
-            while self.pos < self.cap {
-                let writer = self.writer.as_mut().unwrap();
-                match writer.poll_write(&self.buf[self.pos..self.cap]) {
-                    Ok(Async::Ready(i)) => {
-                        if i == 0 {
-                            return Err(io::Error::new(io::ErrorKind::WriteZero,
-                                                      "write zero byte into writer"));
-                        } else {
-                            self.pos += i;
-                            self.amt += i as u64;
-                        }
-                    }
-                    Ok(Async::NotReady) => {
-                        return Ok(Async::NotReady);
-                    }
-                    Err(e) => return Err(e),
-                }
-            }
-
-            // If we've written al the data and we've seen EOF, flush out the
-            // data and finish the transfer.
-            // done with the entire transfer.
-            if self.pos == self.cap && self.read_done {
-                match self.writer.as_mut().unwrap().poll_flush() {
-                    Ok(Async::Ready(())) => {}
-                    Ok(Async::NotReady) => {
-                        return Ok(Async::NotReady);
-                    }
-                    Err(e) => return Err(e),
-                }
-                let reader = self.reader.take().unwrap();
-                let writer = self.writer.take().unwrap();
-                return Ok((self.amt, reader, writer).into());
-            }
+        } else {
+            Box::new(gen_transmit_fut(&self.client, outgoing_request)) as Box<Future<Item=Response<Body>, Error=StringError> + Send>
         }
     }
 }

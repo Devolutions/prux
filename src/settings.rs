@@ -4,7 +4,7 @@ use std;
 use std::io::Write;
 use std::fs::File;
 use log::LevelFilter;
-use clap::{App, Arg};
+use clap::{App, Arg, Values};
 use config::{ConfigError, Config, File as ConfigFile, Environment};
 
 const CONFIGURATION_FILE_NAME: &'static str = "lucid_conf";
@@ -44,6 +44,8 @@ pub struct Server {
     pub uri: String,
     pub maxmind_id: String,
     pub maxmind_password: String,
+    pub path_inclusions: String,
+    pub path_exclusions: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -75,7 +77,9 @@ impl Default for Settings {
             server: Server {
                 uri: "".to_string(),
                 maxmind_id: "".to_string(),
-                maxmind_password: "".to_string()
+                maxmind_password: "".to_string(),
+                path_inclusions: "".to_string(),
+                path_exclusions: None,
             },
             listener: Default::default(),
         }
