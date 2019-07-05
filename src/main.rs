@@ -1,7 +1,6 @@
 extern crate tokio;
 extern crate tokio_io;
 extern crate tokio_tcp;
-#[macro_use]
 extern crate futures;
 #[macro_use]
 extern crate serde_derive;
@@ -10,10 +9,8 @@ extern crate serde_yaml;
 extern crate serde;
 extern crate toml;
 extern crate config;
-#[macro_use]
 extern crate log;
 extern crate env_logger;
-#[macro_use]
 extern crate clap;
 extern crate dns_lookup;
 extern crate hyper;
@@ -29,7 +26,7 @@ use std::sync::atomic::AtomicUsize;
 use hyper::{Uri, Client};
 use hyper::server::conn::Http;
 use env_logger::Builder;
-use log::LevelFilter;
+use log::{error, LevelFilter};
 use dns_lookup::lookup_host;
 use tokio_tcp::TcpListener;
 use tokio::prelude::*;

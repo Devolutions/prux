@@ -10,6 +10,7 @@ use hyper::client::HttpConnector;
 use hyper::header::{HeaderValue, HeaderName};
 use hyper::service::Service;
 use hyper::http::Version;
+use log::error;
 use crate::utils::UriPathMatcher;
 
 pub struct Proxy {
