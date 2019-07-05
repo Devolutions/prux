@@ -4,7 +4,7 @@ use std;
 use std::io::Write;
 use std::fs::File;
 use log::LevelFilter;
-use clap::{App, Arg, Values};
+use clap::{crate_name, crate_version, App, Arg};
 use config::{ConfigError, Config, File as ConfigFile, Environment};
 
 const CONFIGURATION_FILE_NAME: &'static str = "lucid_conf";
@@ -148,8 +148,6 @@ impl Settings {
 
             match matches.value_of("format").unwrap_or_else(|| "TOML") {
                 "TOML" => {
-                    use toml;
-
                     if let Ok(pretty) = toml::to_string_pretty(&settings) {
                         file_path.set_extension("toml");
                         let mut file = File::create(file_path)?;
@@ -157,8 +155,6 @@ impl Settings {
                     }
                 }
                 "YAML" => {
-                    use serde_yaml;
-
                     if let Ok(pretty) = serde_yaml::to_string(&settings) {
                         file_path.set_extension("yaml");
                         let mut file = File::create(file_path)?;
@@ -166,8 +162,6 @@ impl Settings {
                     }
                 }
                 "JSON" => {
-                    use serde_json;
-
                     if let Ok(pretty) = serde_json::to_string_pretty(&settings) {
                         file_path.set_extension("json");
                         let mut file = File::create(file_path)?;

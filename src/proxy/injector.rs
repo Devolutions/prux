@@ -3,19 +3,12 @@ use tokio::prelude::*;
 use std::net::Ipv4Addr;
 use crate::IpResolver;
 use serde_json::Value;
-use std::{time, thread};
 use hashbrown::HashMap;
 
 const PRUX_ADDR: &str = "Prux-Addr";
 const PRUX_CITY: &str = "Prux-City";
-const PRUX_COUTRY: &str = "Prux-Country";
-const PRUX_CONTINENT: &str = "Prux-Continent";
-const PRUX_TIMEZONE: &str = "Prux-Timezone";
+const PRUX_COUNTRY: &str = "Prux-Country";
 const PRUX_COORD: &str = "Prux-Coord"; // lat / long
-const PRUX_RADIUS: &str = "Prux-Radius";
-const PRUX_SUB: &str = "Prux-Sub"; // Province
-const PRUX_ISP: &str = "Prux-Isp";
-
 
 pub fn inject_basic_hdr(ipr: (Ipv4Addr, IpResolver)) -> impl Future<Item=HashMap<String, String>, Error=()> {
     let (ip, resolver) = ipr;
@@ -33,7 +26,7 @@ pub fn inject_basic_hdr(ipr: (Ipv4Addr, IpResolver)) -> impl Future<Item=HashMap
 
         if let Some(country_name_en) = json.get("country").and_then(|val| val.get("names")).and_then(|names| names.get("en").map(|en_name| en_name.as_str())) {
             if let Some(name) = country_name_en {
-                hdr_map.insert(PRUX_COUTRY.to_string(), name.to_string());
+                hdr_map.insert(PRUX_COUNTRY.to_string(), name.to_string());
             }
         }
 

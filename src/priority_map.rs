@@ -1,7 +1,7 @@
-use std::collections::LinkedList;
-use hashbrown::HashMap;
 use std::time::SystemTime;
 use std::hash::Hash;
+
+use hashbrown::HashMap;
 
 pub struct PriorityMap<K: Eq + Hash,V> {
     data: HashMap<K,(V, SystemTime)>,
