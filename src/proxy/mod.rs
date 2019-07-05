@@ -70,10 +70,9 @@ fn gen_transmit_fut(client: &Client<HttpConnector>, req: Request<Body>) -> impl 
                     Version::HTTP_10 => "1.0",
                     Version::HTTP_11 => "1.1",
                     Version::HTTP_2 => "2.0",
-                    _ => "?",
                 };
                 {
-                    let mut headers = response.headers_mut();
+                    let headers = response.headers_mut();
 
                     headers.append("proxy-info", HeaderValue::from_str(format!("{} prux-0.0.1", version).as_str()).expect("should be ok"));
                 }

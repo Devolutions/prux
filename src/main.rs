@@ -21,7 +21,6 @@ extern crate base64;
 use std::env;
 use std::net::SocketAddr;
 use std::net;
-use std::sync::atomic::AtomicUsize;
 
 use hyper::{Uri, Client};
 use hyper::server::conn::Http;
@@ -31,11 +30,8 @@ use dns_lookup::lookup_host;
 use tokio_tcp::TcpListener;
 use tokio::prelude::*;
 
-
 use crate::http::request::HttpRequest;
 use crate::proxy::{Proxy};
-
-static counter: AtomicUsize = AtomicUsize::new(0);
 
 pub type IpResolver = HttpRequest;
 
