@@ -3,7 +3,6 @@ use tokio::prelude::*;
 use std::net::Ipv4Addr;
 use crate::IpResolver;
 use serde_json::Value;
-use std::{time, thread};
 use hashbrown::HashMap;
 
 const PRUX_ADDR: &str = "Prux-Addr";

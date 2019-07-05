@@ -1,25 +1,15 @@
 pub mod injector;
-use std::io;
 
-use futures::{Future, Poll};
+use futures::Future;
 use std::net::{Ipv4Addr, SocketAddr};
 
-use tokio::io::{AsyncRead, AsyncWrite};
-use tokio::prelude::*;
 use crate::IpResolver;
-use crate::utils;
-use bytes::{Buf, BufMut};
-use ::{futures, httparse};
-use std::io::Cursor;
-use hyper::{Body, Request, Client, Response, Uri, StatusCode};
-use hyper::http;
-use hyper::client::{ResponseFuture, HttpConnector};
+use ::futures;
+use hyper::{Body, Request, Client, Response, StatusCode};
+use hyper::client::HttpConnector;
 use hyper::header::{HeaderValue, HeaderName};
 use hyper::service::Service;
-use futures::future::{FutureResult, Either};
 use hyper::http::Version;
-use hashbrown::HashMap;
-use httparse::Error;
 use crate::utils::UriPathMatcher;
 
 pub struct Proxy {

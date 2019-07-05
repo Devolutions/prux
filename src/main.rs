@@ -21,27 +21,22 @@ extern crate parking_lot;
 extern crate reqwest;
 extern crate base64;
 
-use hyper::{Uri, Server, Client};
+use std::env;
+use std::net::SocketAddr;
+use std::net;
+use std::sync::atomic::AtomicUsize;
+
+use hyper::{Uri, Client};
+use hyper::server::conn::Http;
 use env_logger::Builder;
 use log::LevelFilter;
-use std::env;
-use std::net::{SocketAddr, Ipv4Addr};
-use std::net;
 use dns_lookup::lookup_host;
 use tokio_tcp::TcpListener;
 use tokio::prelude::*;
-use tokio::io::shutdown;
-use tokio_tcp::TcpStream;
 
-use parking_lot::Mutex;
-use std::net::Shutdown;
+
 use crate::http::request::HttpRequest;
-use crossbeam_channel::bounded;
 use crate::proxy::{Proxy};
-use futures::sync::oneshot;
-use futures::task::Task;
-use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
-use hyper::server::conn::Http;
 
 static counter: AtomicUsize = AtomicUsize::new(0);
 

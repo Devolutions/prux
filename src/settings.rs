@@ -4,7 +4,7 @@ use std;
 use std::io::Write;
 use std::fs::File;
 use log::LevelFilter;
-use clap::{App, Arg, Values};
+use clap::{App, Arg};
 use config::{ConfigError, Config, File as ConfigFile, Environment};
 
 const CONFIGURATION_FILE_NAME: &'static str = "lucid_conf";
