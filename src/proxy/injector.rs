@@ -10,9 +10,7 @@ const PRUX_CITY: &str = "Prux-City";
 const PRUX_COUNTRY: &str = "Prux-Country";
 const PRUX_COORD: &str = "Prux-Coord"; // lat / long
 
-pub fn inject_basic_hdr(ipr: (Ipv4Addr, IpResolver)) -> impl Future<Item=HashMap<String, String>, Error=()> {
-    let (ip, resolver) = ipr;
-
+pub fn inject_basic_hdr(ip: Ipv4Addr, resolver: IpResolver) -> impl Future<Item=HashMap<String, String>, Error=()> {
     let fut = resolver.lookup(&ip).and_then(move |json: Value| {
         let mut hdr_map = HashMap::new();
 
