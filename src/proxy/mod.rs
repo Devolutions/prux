@@ -1,4 +1,4 @@
-use std::net::{Ipv4Addr, SocketAddr};
+use std::net::{Ipv4Addr, SocketAddr, IpAddr, Ipv6Addr};
 
 use ::futures;
 use futures::Future;
@@ -14,9 +14,11 @@ use crate::utils::UriPathMatcher;
 
 pub mod injector;
 
+static IPV6_FORWARDED_TRIM_VALUE: &'static [char] = &['"', '[', ']'];
+
 pub struct Proxy {
     pub upstream_uri: Uri,
-    pub source_ip: Option<Ipv4Addr>,
+    pub source_ip: Option<IpAddr>,
     pub resolver: IpResolver,
     pub client: Client<HttpConnector>,
     pub path_inclusions: Vec<UriPathMatcher>,
@@ -24,7 +26,7 @@ pub struct Proxy {
 }
 
 impl Proxy {
-    pub fn new(upstream_uri: Uri, source_ip: Option<Ipv4Addr>, resolver: IpResolver, client: Client<HttpConnector>, inclusions: Vec<String>, exclusions: Option<Vec<String>>) -> Self {
+    pub fn new(upstream_uri: Uri, source_ip: Option<IpAddr>, resolver: IpResolver, client: Client<HttpConnector>, inclusions: Vec<String>, exclusions: Option<Vec<String>>) -> Self {
         Proxy {
             upstream_uri,
             source_ip,
@@ -114,20 +116,20 @@ impl Service for Proxy {
         let forwarded_ip = x_forwarded_ip.or_else(|| req.headers().get("Forwarded").map(|value| String::from_utf8_lossy(value.as_bytes())).and_then(|str_val| {
             str_val.to_lowercase().split(';').find_map(|s| {
                 if s.starts_with("for=") {
-                    s.splitn(2, "=").skip(1).next().and_then(|s| s.splitn(2, ", ").next().map(|s| s.to_string()))
+                    s.splitn(2, "=").skip(1).next().and_then(|s| s.splitn(2, ", ").next().map(|s| s.trim_matches(IPV6_FORWARDED_TRIM_VALUE).to_string()))
                 } else {
                     None
                 }
             })
         }));
 
-        let forwarded_ip = forwarded_ip.and_then(|ip_str| Ipv4Addr::from_str(&ip_str).ok()).or(self.source_ip.clone());
+        let forwarded_ip = forwarded_ip.and_then(|ip_str| Ipv4Addr::from_str(&ip_str).map(|ip| IpAddr::V4(ip)).ok().or_else(|| Ipv6Addr::from_str(&ip_str).map(|ip| IpAddr::V6(ip)).ok())).or(self.source_ip.clone());
 
         let mut outgoing_request = req;
         *outgoing_request.uri_mut() = upstream_uri;
 
         if let Some(ip) = forwarded_ip {
-            if ipv4addr_is_global(&ip) && self.validate_path(outgoing_request.uri().path()) {
+            if ip_is_global(&ip) && self.validate_path(outgoing_request.uri().path()) {
                 let client = self.client.clone();
                 Box::new(injector::inject_basic_hdr(ip, self.resolver.clone()).map_err(|_| StringError("injection failed".to_string())).and_then(move |header_map| {
                     for (header, value) in header_map {
@@ -141,6 +143,14 @@ impl Service for Proxy {
         } else {
             Box::new(gen_transmit_fut(&self.client, outgoing_request)) as Box<Future<Item=Response<Body>, Error=StringError> + Send>
         }
+    }
+}
+
+pub fn ip_is_global(ip: &IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(ip) => !ip.is_private() && !ip.is_loopback() && !ip.is_link_local() &&
+            !ip.is_broadcast() && !ip.is_documentation() && !ip.is_unspecified(),
+        IpAddr::V6(ip) => !ip.is_loopback() && !ip.is_unspecified(),
     }
 }
 

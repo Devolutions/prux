@@ -60,7 +60,7 @@ fn main() {
             let client_hpr = client.clone();
             let server_uri = server_uri.clone();
             let resolver = ip_resolver.clone();
-            let source = client_socket.peer_addr().ok().and_then(|sock_addr| if let SocketAddr::V4(ip) = sock_addr { Some(ip.ip().clone()) } else { None });
+            let source = client_socket.peer_addr().ok().map(|sockaddr| sockaddr.ip()); //client_socket.peer_addr().ok().and_then(|sock_addr| if let SocketAddr::V4(ip) = sock_addr { Some(ip.ip().clone()) } else { None });
             let err_closure = |_| ();
 
             let inclusions = config.server.path_inclusions.split(",").map(|s| s.to_string()).collect::<Vec<String>>();

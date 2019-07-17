@@ -4,7 +4,7 @@ use hyper::header::AUTHORIZATION;
 use serde_json::Value;
 use reqwest::r#async::{Client, Response};
 use base64::encode;
-use std::net::Ipv4Addr;
+use std::net::{Ipv4Addr, IpAddr};
 use parking_lot::RwLock;
 use std::sync::Arc;
 use crate::priority_map::PriorityMap;
@@ -36,7 +36,7 @@ impl HttpRequest {
         }
     }
 
-    pub fn lookup(&self, addr: &Ipv4Addr) -> impl Future<Item=Value, Error=()> {
+    pub fn lookup(&self, addr: &IpAddr) -> impl Future<Item=Value, Error=()> {
         let self_lazy = self.clone();
 
         let addr_str = format!("{}", addr);

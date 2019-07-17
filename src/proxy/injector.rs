@@ -1,6 +1,6 @@
 use futures::Future;
 use tokio::prelude::*;
-use std::net::Ipv4Addr;
+use std::net::{Ipv4Addr, IpAddr};
 use crate::IpResolver;
 use serde_json::Value;
 use hashbrown::HashMap;
@@ -10,7 +10,7 @@ const PRUX_CITY: &str = "Prux-City";
 const PRUX_COUNTRY: &str = "Prux-Country";
 const PRUX_COORD: &str = "Prux-Coord"; // lat / long
 
-pub fn inject_basic_hdr(ip: Ipv4Addr, resolver: IpResolver) -> impl Future<Item=HashMap<String, String>, Error=()> {
+pub fn inject_basic_hdr(ip: IpAddr, resolver: IpResolver) -> impl Future<Item=HashMap<String, String>, Error=()> {
     let fut = resolver.lookup(&ip).and_then(move |json: Value| {
         let mut hdr_map = HashMap::new();
 
