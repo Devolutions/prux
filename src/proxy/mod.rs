@@ -2,7 +2,7 @@ use std::net::{Ipv4Addr, SocketAddr};
 
 use ::futures;
 use futures::Future;
-use hyper::{Body, Client, Request, Response, StatusCode};
+use hyper::{Body, Client, Request, Response, StatusCode, Uri};
 use hyper::client::HttpConnector;
 use hyper::header::{HeaderName, HeaderValue};
 use hyper::http::Version;
@@ -15,7 +15,7 @@ use crate::utils::UriPathMatcher;
 pub mod injector;
 
 pub struct Proxy {
-    pub upstream_addr: SocketAddr,
+    pub upstream_uri: Uri,
     pub source_ip: Option<Ipv4Addr>,
     pub resolver: IpResolver,
     pub client: Client<HttpConnector>,
@@ -24,9 +24,9 @@ pub struct Proxy {
 }
 
 impl Proxy {
-    pub fn new(upstream_addr: SocketAddr, source_ip: Option<Ipv4Addr>, resolver: IpResolver, client: Client<HttpConnector>, inclusions: Vec<String>, exclusions: Option<Vec<String>>) -> Self {
+    pub fn new(upstream_uri: Uri, source_ip: Option<Ipv4Addr>, resolver: IpResolver, client: Client<HttpConnector>, inclusions: Vec<String>, exclusions: Option<Vec<String>>) -> Self {
         Proxy {
-            upstream_addr,
+            upstream_uri,
             source_ip,
             client,
             path_inclusions: inclusions.iter().filter_map(|p| UriPathMatcher::new(p).map_err(|e| error!("Unable to construct included middleware route: {}", e)).ok()).collect(),
@@ -104,31 +104,30 @@ impl Service for Proxy {
     fn call(&mut self, req: Request<Self::ReqBody>) -> Self::Future {
         use std::str::FromStr;
 
-        let last_part = if let Some(path) = req.uri().path_and_query() {
-            path.as_str()
-        } else {
-            "/"
-        };
-        let upstream_uri = format!("http://{}{}", &self.upstream_addr.to_string(), last_part.to_string());
-        let (mut parts, body) = req.into_parts();
+        let mut upstream_parts = self.upstream_uri.clone().into_parts();
+        upstream_parts.path_and_query = req.uri().path_and_query().cloned();
 
-        let x_forwarded_ip: Option<String> = parts.headers.get("X-Forwarded-For").map(|value| String::from_utf8_lossy(value.as_bytes())).and_then(|str_val| str_val.splitn(2, ", ").next().map(|s| s.to_string()));
+        let upstream_uri = Uri::from_parts(upstream_parts).expect("Url must be valid");
 
-        let forwarded_ip = x_forwarded_ip.or_else(|| parts.headers.get("Forwarded").map(|value| String::from_utf8_lossy(value.as_bytes())).and_then(|str_val| str_val.split(';').find_map(|s| {
-            if s.starts_with("for=") {
-                s.split("for=").skip(1).next().and_then(|s| s.splitn(2, ", ").next().map(|s| s.to_string()))
-            } else {
-                None
-            }
-        })));
+        let x_forwarded_ip: Option<String> = req.headers().get("X-Forwarded-For").map(|value| String::from_utf8_lossy(value.as_bytes())).and_then(|str_val| str_val.to_lowercase().splitn(2, ", ").next().map(|s| s.to_string()));
+
+        let forwarded_ip = x_forwarded_ip.or_else(|| req.headers().get("Forwarded").map(|value| String::from_utf8_lossy(value.as_bytes())).and_then(|str_val| {
+            str_val.to_lowercase().split(';').find_map(|s| {
+                if s.starts_with("for=") {
+                    s.splitn(2, "=").skip(1).next().and_then(|s| s.splitn(2, ", ").next().map(|s| s.to_string()))
+                } else {
+                    None
+                }
+            })
+        }));
 
         let forwarded_ip = forwarded_ip.and_then(|ip_str| Ipv4Addr::from_str(&ip_str).ok()).or(self.source_ip.clone());
 
-        parts.uri = upstream_uri.parse().expect("Url must be valid");
-        let mut outgoing_request = Request::from_parts(parts, body);
+        let mut outgoing_request = req;
+        *outgoing_request.uri_mut() = upstream_uri;
 
         if let Some(ip) = forwarded_ip {
-            if self.validate_path(outgoing_request.uri().path()) {
+            if ipv4addr_is_global(&ip) && self.validate_path(outgoing_request.uri().path()) {
                 let client = self.client.clone();
                 Box::new(injector::inject_basic_hdr(ip, self.resolver.clone()).map_err(|_| StringError("injection failed".to_string())).and_then(move |header_map| {
                     for (header, value) in header_map {
@@ -140,7 +139,12 @@ impl Service for Proxy {
                 Box::new(gen_transmit_fut(&self.client, outgoing_request)) as Box<Future<Item=Response<Body>, Error=StringError> + Send>
             }
         } else {
-        Box::new(gen_transmit_fut(&self.client, outgoing_request)) as Box<Future<Item=Response<Body>, Error=StringError> + Send>
+            Box::new(gen_transmit_fut(&self.client, outgoing_request)) as Box<Future<Item=Response<Body>, Error=StringError> + Send>
         }
     }
+}
+
+pub fn ipv4addr_is_global(ip: &std::net::Ipv4Addr) -> bool {
+    !ip.is_private() && !ip.is_loopback() && !ip.is_link_local() &&
+        !ip.is_broadcast() && !ip.is_documentation() && !ip.is_unspecified()
 }
