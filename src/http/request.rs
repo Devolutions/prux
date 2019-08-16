@@ -21,7 +21,7 @@ pub struct HttpRequest {
 }
 
 impl HttpRequest {
-    pub fn new(id: &str, password: &str) -> Self {
+    pub fn new(id: &str, password: &str, cache_capacity: usize) -> Self {
         let mut headers = HeaderMap::new();
         let encoded = encode(&format!("{}:{}", id, password));
 
@@ -31,7 +31,7 @@ impl HttpRequest {
             inner: Arc::new(Inner {
                 client: Client::new(),
                 headers,
-                cache: RwLock::new(PriorityMap::new()),
+                cache: RwLock::new(PriorityMap::new(cache_capacity)),
             })
         }
     }
