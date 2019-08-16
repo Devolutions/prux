@@ -4,7 +4,7 @@ extern crate serde_derive;
 
 use std::env;
 use std::net;
-use std::net::{SocketAddr, Ipv4Addr, IpAddr};
+use std::net::SocketAddr;
 
 use dns_lookup::lookup_host;
 use env_logger::Builder;
