@@ -1,4 +1,4 @@
-use std::net::{Ipv4Addr, SocketAddr, IpAddr, Ipv6Addr};
+use std::net::{Ipv4Addr, IpAddr, Ipv6Addr};
 
 use ::futures;
 use futures::Future;
@@ -101,7 +101,7 @@ impl Service for Proxy {
     type ReqBody = Body;
     type ResBody = Body;
     type Error = StringError;
-    type Future = Box<Future<Item=Response<Body>, Error=StringError> + Send>;
+    type Future = Box<dyn Future<Item=Response<Body>, Error=StringError> + Send>;
 
     fn call(&mut self, req: Request<Self::ReqBody>) -> Self::Future {
         use std::str::FromStr;
@@ -136,12 +136,12 @@ impl Service for Proxy {
                         outgoing_request.headers_mut().insert(HeaderName::from_bytes(header.as_bytes()).expect("should be ok"), HeaderValue::from_str(value.as_str()).expect("should be ok"));
                     }
                     gen_transmit_fut(&client, outgoing_request)
-                })) as Box<Future<Item=Response<Body>, Error=StringError> + Send>
+                })) as Box<dyn Future<Item=Response<Body>, Error=StringError> + Send>
             } else {
-                Box::new(gen_transmit_fut(&self.client, outgoing_request)) as Box<Future<Item=Response<Body>, Error=StringError> + Send>
+                Box::new(gen_transmit_fut(&self.client, outgoing_request)) as Box<dyn Future<Item=Response<Body>, Error=StringError> + Send>
             }
         } else {
-            Box::new(gen_transmit_fut(&self.client, outgoing_request)) as Box<Future<Item=Response<Body>, Error=StringError> + Send>
+            Box::new(gen_transmit_fut(&self.client, outgoing_request)) as Box<dyn Future<Item=Response<Body>, Error=StringError> + Send>
         }
     }
 }
@@ -152,9 +152,4 @@ pub fn ip_is_global(ip: &IpAddr) -> bool {
             !ip.is_broadcast() && !ip.is_documentation() && !ip.is_unspecified(),
         IpAddr::V6(ip) => !ip.is_loopback() && !ip.is_unspecified(),
     }
-}
-
-pub fn ipv4addr_is_global(ip: &std::net::Ipv4Addr) -> bool {
-    !ip.is_private() && !ip.is_loopback() && !ip.is_link_local() &&
-        !ip.is_broadcast() && !ip.is_documentation() && !ip.is_unspecified()
 }

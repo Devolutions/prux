@@ -4,7 +4,7 @@ use hyper::header::AUTHORIZATION;
 use serde_json::Value;
 use reqwest::r#async::{Client, Response};
 use base64::encode;
-use std::net::{Ipv4Addr, IpAddr};
+use std::net::IpAddr;
 use parking_lot::RwLock;
 use std::sync::Arc;
 use crate::priority_map::PriorityMap;

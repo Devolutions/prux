@@ -1,9 +1,11 @@
+use std::net::IpAddr;
+
 use futures::Future;
 use tokio::prelude::*;
-use std::net::{Ipv4Addr, IpAddr};
-use crate::IpResolver;
 use serde_json::Value;
 use hashbrown::HashMap;
+
+use crate::IpResolver;
 
 const PRUX_ADDR: &str = "Prux-Addr";
 const PRUX_CITY: &str = "Prux-City";
