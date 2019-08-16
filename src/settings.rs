@@ -46,6 +46,7 @@ pub struct Server {
     pub maxmind_password: String,
     pub path_inclusions: String,
     pub path_exclusions: Option<String>,
+    pub cache_capacity: usize,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -80,6 +81,7 @@ impl Default for Settings {
                 maxmind_password: "".to_string(),
                 path_inclusions: "".to_string(),
                 path_exclusions: None,
+                cache_capacity: 2048,
             },
             listener: Default::default(),
         }

@@ -4,7 +4,7 @@ extern crate serde_derive;
 
 use std::env;
 use std::net;
-use std::net::SocketAddr;
+use std::net::{SocketAddr, Ipv4Addr, IpAddr};
 
 use dns_lookup::lookup_host;
 use env_logger::Builder;
@@ -43,7 +43,7 @@ fn main() {
 
     builder.init();
 
-    let ip_resolver = HttpRequest::new(&config.server.maxmind_id, &config.server.maxmind_password);
+    let ip_resolver = HttpRequest::new(&config.server.maxmind_id, &config.server.maxmind_password, config.server.cache_capacity);
 
     let server_uri = config.server.uri.as_str().parse::<Uri>().expect("Invalid upstream uri");
 

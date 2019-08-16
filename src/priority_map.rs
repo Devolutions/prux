@@ -8,14 +8,14 @@ pub struct PriorityMap<K: Eq + Hash,V> {
 }
 
 impl<K: Eq + Hash + Clone, V> PriorityMap<K,V> {
-    pub fn new() -> Self {
+    pub fn new(capacity: usize) -> Self {
         PriorityMap {
-            data: HashMap::new(),
+            data: HashMap::with_capacity(capacity),
         }
     }
 
     pub fn insert(&mut self, key: K, value: V) {
-        if self.data.capacity() == self.data.len() {
+        if dbg!(self.data.capacity()) == self.data.len() {
             let min = self.data.iter().min_by(|x, y| (x.1).1.read().cmp(&(y.1).1.read())).map(|val| val.0.clone());
             if let Some(old) = min {
                 self.data.remove(&old);
@@ -28,7 +28,7 @@ impl<K: Eq + Hash + Clone, V> PriorityMap<K,V> {
     pub fn get(&self, key: &K) -> Option<&V> {
         let value = self.data.get(key);
         if let Some((pop_value, ref pop_time)) = value {
-            *pop_time.write() = SystemTime::now();
+            *pop_time.write() = dbg!(SystemTime::now());
             Some(pop_value)
         } else {
             None
