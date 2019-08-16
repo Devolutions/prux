@@ -14,7 +14,7 @@ use crate::utils::UriPathMatcher;
 
 pub mod injector;
 
-static IPV6_FORWARDED_TRIM_VALUE: &'static [char] = &['"', '[', ']'];
+static IPV6_FORWARDED_TRIM_VALUE: &[char] = &['"', '[', ']'];
 
 pub struct Proxy {
     pub upstream_uri: Uri,
@@ -116,14 +116,14 @@ impl Service for Proxy {
         let forwarded_ip = x_forwarded_ip.or_else(|| req.headers().get("Forwarded").map(|value| String::from_utf8_lossy(value.as_bytes())).and_then(|str_val| {
             str_val.to_lowercase().split(';').find_map(|s| {
                 if s.starts_with("for=") {
-                    s.splitn(2, "=").skip(1).next().and_then(|s| s.splitn(2, ", ").next().map(|s| s.trim_matches(IPV6_FORWARDED_TRIM_VALUE).to_string()))
+                    s.splitn(2, '=').nth(1).and_then(|s| s.splitn(2, ", ").next().map(|s| s.trim_matches(IPV6_FORWARDED_TRIM_VALUE).to_string()))
                 } else {
                     None
                 }
             })
         }));
 
-        let forwarded_ip = forwarded_ip.and_then(|ip_str| Ipv4Addr::from_str(&ip_str).map(|ip| IpAddr::V4(ip)).ok().or_else(|| Ipv6Addr::from_str(&ip_str).map(|ip| IpAddr::V6(ip)).ok())).or(self.source_ip.clone());
+        let forwarded_ip = forwarded_ip.and_then(|ip_str| Ipv4Addr::from_str(&ip_str).map(|ip| IpAddr::V4(ip)).ok().or_else(|| Ipv6Addr::from_str(&ip_str).map(|ip| IpAddr::V6(ip)).ok())).or_else(|| self.source_ip);
 
         let mut outgoing_request = req;
         *outgoing_request.uri_mut() = upstream_uri;

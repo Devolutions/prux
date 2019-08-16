@@ -60,12 +60,12 @@ fn main() {
             let client_hpr = client.clone();
             let server_uri = server_uri.clone();
             let resolver = ip_resolver.clone();
-            let source = client_socket.peer_addr().ok().map(|sockaddr| sockaddr.ip()); //client_socket.peer_addr().ok().and_then(|sock_addr| if let SocketAddr::V4(ip) = sock_addr { Some(ip.ip().clone()) } else { None });
+            let source = client_socket.peer_addr().ok().map(|sockaddr| sockaddr.ip());
             let err_closure = |_| ();
 
-            let inclusions = config.server.path_inclusions.split(",").map(|s| s.to_string()).collect::<Vec<String>>();
+            let inclusions = config.server.path_inclusions.split(',').map(|s| s.to_string()).collect::<Vec<String>>();
             let exclusions = if let Some(exclusion_string) = config.server.path_exclusions.clone() {
-                exclusion_string.split(",").map(|s| s.to_string()).collect::<Vec<String>>()
+                exclusion_string.split(',').map(|s| s.to_string()).collect::<Vec<String>>()
             } else {
                 Vec::new()
             };
@@ -92,7 +92,7 @@ pub fn sockaddr_from_uri(uri: &str) -> Result<SocketAddr, String> {
     let ip = {
         if let Ok(addrs) = get_addr_from_uri(&uri) {
             if let Some(ipv4) = addrs.iter().find(|ip| ip.is_ipv4()) {
-                ipv4.clone()
+                *ipv4
             } else {
                 return Err(String::from(
                     "No local ipV4Addr specified"));

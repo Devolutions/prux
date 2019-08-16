@@ -42,15 +42,14 @@ impl HttpRequest {
         let addr_str = format!("{}", addr);
 
         let lazy = future::lazy(move || {
-            self_lazy.inner.cache.read().get(&addr_str).map(|v| v.clone()).ok_or_else(move || addr_str).map_err(|addr| (self_lazy.clone(), addr))
+            self_lazy.inner.cache.read().get(&addr_str).cloned().ok_or_else(move || addr_str).map_err(|addr| (self_lazy.clone(), addr))
         }).or_else(move |(self_req, addr)| {
             self_req.inner.client
                 .get(&format!("https://geoip.maxmind.com/geoip/v2.1/city/{}", addr))
                 .headers(self_req.inner.headers.clone())
                 .send().map_err(|_| ())
                 .and_then(|mut res: Response| {
-                    let result = res.json::<Value>().map_err(|_| ());
-                    result
+                    res.json::<Value>().map_err(|_| ())
                 }).inspect(move |value| {
                 self_req.inner.cache.write().insert(addr, value.clone());
             })
