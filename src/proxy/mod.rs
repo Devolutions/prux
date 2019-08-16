@@ -1,4 +1,4 @@
-use std::net::{Ipv4Addr, SocketAddr, IpAddr, Ipv6Addr};
+use std::net::{Ipv4Addr, IpAddr, Ipv6Addr};
 
 use ::futures;
 use futures::Future;
@@ -14,7 +14,7 @@ use crate::utils::UriPathMatcher;
 
 pub mod injector;
 
-static IPV6_FORWARDED_TRIM_VALUE: &'static [char] = &['"', '[', ']'];
+static IPV6_FORWARDED_TRIM_VALUE: &[char] = &['"', '[', ']'];
 
 pub struct Proxy {
     pub upstream_uri: Uri,
@@ -75,11 +75,9 @@ fn gen_transmit_fut(client: &Client<HttpConnector>, req: Request<Body>) -> impl 
                     Version::HTTP_11 => "1.1",
                     Version::HTTP_2 => "2.0",
                 };
-                {
-                    let headers = response.headers_mut();
-
-                    headers.append("proxy-info", HeaderValue::from_str(format!("{} prux-1.1.0", version).as_str()).expect("should be ok"));
-                }
+                
+                let headers = response.headers_mut();
+                headers.append("proxy-info", HeaderValue::from_str(format!("{} prux-1.1.0", version).as_str()).expect("should be ok"));
 
                 response
             }
@@ -101,7 +99,7 @@ impl Service for Proxy {
     type ReqBody = Body;
     type ResBody = Body;
     type Error = StringError;
-    type Future = Box<Future<Item=Response<Body>, Error=StringError> + Send>;
+    type Future = Box<dyn Future<Item=Response<Body>, Error=StringError> + Send>;
 
     fn call(&mut self, req: Request<Self::ReqBody>) -> Self::Future {
         use std::str::FromStr;
@@ -116,14 +114,14 @@ impl Service for Proxy {
         let forwarded_ip = x_forwarded_ip.or_else(|| req.headers().get("Forwarded").map(|value| String::from_utf8_lossy(value.as_bytes())).and_then(|str_val| {
             str_val.to_lowercase().split(';').find_map(|s| {
                 if s.starts_with("for=") {
-                    s.splitn(2, "=").skip(1).next().and_then(|s| s.splitn(2, ", ").next().map(|s| s.trim_matches(IPV6_FORWARDED_TRIM_VALUE).to_string()))
+                    s.splitn(2, '=').nth(1).and_then(|s| s.splitn(2, ", ").next().map(|s| s.trim_matches(IPV6_FORWARDED_TRIM_VALUE).to_string()))
                 } else {
                     None
                 }
             })
         }));
 
-        let forwarded_ip = forwarded_ip.and_then(|ip_str| Ipv4Addr::from_str(&ip_str).map(|ip| IpAddr::V4(ip)).ok().or_else(|| Ipv6Addr::from_str(&ip_str).map(|ip| IpAddr::V6(ip)).ok())).or(self.source_ip.clone());
+        let forwarded_ip = forwarded_ip.and_then(|ip_str| Ipv4Addr::from_str(&ip_str).map(|ip| IpAddr::V4(ip)).ok().or_else(|| Ipv6Addr::from_str(&ip_str).map(|ip| IpAddr::V6(ip)).ok())).or_else(|| self.source_ip);
 
         let mut outgoing_request = req;
         *outgoing_request.uri_mut() = upstream_uri;
@@ -136,12 +134,12 @@ impl Service for Proxy {
                         outgoing_request.headers_mut().insert(HeaderName::from_bytes(header.as_bytes()).expect("should be ok"), HeaderValue::from_str(value.as_str()).expect("should be ok"));
                     }
                     gen_transmit_fut(&client, outgoing_request)
-                })) as Box<Future<Item=Response<Body>, Error=StringError> + Send>
+                })) as Box<dyn Future<Item=Response<Body>, Error=StringError> + Send>
             } else {
-                Box::new(gen_transmit_fut(&self.client, outgoing_request)) as Box<Future<Item=Response<Body>, Error=StringError> + Send>
+                Box::new(gen_transmit_fut(&self.client, outgoing_request)) as Box<dyn Future<Item=Response<Body>, Error=StringError> + Send>
             }
         } else {
-            Box::new(gen_transmit_fut(&self.client, outgoing_request)) as Box<Future<Item=Response<Body>, Error=StringError> + Send>
+            Box::new(gen_transmit_fut(&self.client, outgoing_request)) as Box<dyn Future<Item=Response<Body>, Error=StringError> + Send>
         }
     }
 }
@@ -152,9 +150,4 @@ pub fn ip_is_global(ip: &IpAddr) -> bool {
             !ip.is_broadcast() && !ip.is_documentation() && !ip.is_unspecified(),
         IpAddr::V6(ip) => !ip.is_loopback() && !ip.is_unspecified(),
     }
-}
-
-pub fn ipv4addr_is_global(ip: &std::net::Ipv4Addr) -> bool {
-    !ip.is_private() && !ip.is_loopback() && !ip.is_link_local() &&
-        !ip.is_broadcast() && !ip.is_documentation() && !ip.is_unspecified()
 }

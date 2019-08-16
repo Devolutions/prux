@@ -7,7 +7,7 @@ use log::LevelFilter;
 use clap::{crate_name, crate_version, App, Arg};
 use config::{ConfigError, Config, File as ConfigFile, Environment};
 
-const CONFIGURATION_FILE_NAME: &'static str = "lucid_conf";
+const CONFIGURATION_FILE_NAME: &str = "lucid_conf";
 
 #[derive(Debug)]
 pub enum ConfigurationError {
