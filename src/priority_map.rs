@@ -1,8 +1,8 @@
 use std::time::SystemTime;
 use std::hash::Hash;
 use parking_lot::RwLock;
-use hashbrown::HashMap;
 use log::info;
+use std::collections::HashMap;
 
 pub struct PriorityMap<K: Eq + Hash,V> {
     data: HashMap<K,(V, RwLock<SystemTime>)>,

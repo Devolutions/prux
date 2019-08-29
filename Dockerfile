@@ -2,7 +2,7 @@
 # BUILD CONTAINER
 # ++++++++++++++++++++++++++++++++
 
-FROM rust:1.35-stretch as rust-build
+FROM rust:1.37-stretch as rust-build
 LABEL maintainer "Devolutions Inc."
 
 WORKDIR /rust/prux

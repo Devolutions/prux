@@ -25,11 +25,13 @@ impl HttpRequest {
         let mut headers = HeaderMap::new();
         let encoded = encode(&format!("{}:{}", id, password));
 
-        headers.append(AUTHORIZATION, format!("Basic {}", encoded).parse().unwrap());
+        headers.append(AUTHORIZATION, format!("Basic {}", encoded).parse().expect("should be ok"));
+
+        let client = Client::builder().use_rustls_tls().build().expect("Prux needs OpenSSL for web client.");
 
         HttpRequest {
             inner: Arc::new(Inner {
-                client: Client::new(),
+                client,
                 headers,
                 cache: RwLock::new(PriorityMap::new(cache_capacity)),
             })
