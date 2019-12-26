@@ -1,16 +1,18 @@
-use std::net::{Ipv4Addr, IpAddr, Ipv6Addr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 use ::futures;
 use futures::Future;
+use futures::task::{Context, Poll};
 use hyper::{Body, Client, Request, Response, StatusCode, Uri};
 use hyper::client::HttpConnector;
-use hyper::header::{HeaderName, HeaderValue};
+use hyper::header::{HeaderValue, HeaderName};
 use hyper::http::Version;
 use hyper::service::Service;
 use log::error;
 
 use crate::IpResolver;
 use crate::utils::UriPathMatcher;
+use std::collections::HashMap;
 
 pub mod injector;
 
@@ -65,43 +67,44 @@ impl std::fmt::Display for StringError {
 
 impl std::error::Error for StringError {}
 
-fn gen_transmit_fut(client: &Client<HttpConnector>, req: Request<Body>) -> impl Future<Item=Response<Body>, Error=StringError> + Send {
-    client.request(req).map_err(|_| StringError("".to_string())).then(|result| {
-        let our_response = match result.map_err(|_| StringError("".to_string())) {
-            Ok(mut response) => {
-                let version = match response.version() {
-                    Version::HTTP_09 => "0.9",
-                    Version::HTTP_10 => "1.0",
-                    Version::HTTP_11 => "1.1",
-                    Version::HTTP_2 => "2.0",
-                };
-                
-                let headers = response.headers_mut();
-                headers.append("proxy-info", HeaderValue::from_str(format!("{} prux-1.1.0", version).as_str()).expect("should be ok"));
+async fn gen_transmit_fut(client: &Client<HttpConnector>, req: Request<Body>) -> Response<Body> {
+    match client.request(req).await {
+        Ok(mut response) => {
+            let version = match response.version() {
+                Version::HTTP_09 => "0.9",
+                Version::HTTP_10 => "1.0",
+                Version::HTTP_11 => "1.1",
+                Version::HTTP_2 => "2.0",
+                _ => "2.0"
+            };
 
-                response
-            }
-            Err(e) => {
-                error!("hyper error: {}", e);
-                let mut response = Response::new(Body::from("Something went wrong, please try again later."));
-                let (mut parts, body) = response.into_parts();
-                parts.status = StatusCode::BAD_GATEWAY;
-                response = Response::from_parts(parts, body);
+            let headers = response.headers_mut();
+            headers.append("proxy-info", HeaderValue::from_str(format!("{} prux-1.1.0", version).as_str()).expect("should be ok"));
 
-                response
-            }
-        };
-        futures::future::ok(our_response)
-    })
+            response
+        }
+        Err(e) => {
+            error!("hyper error: {}", e);
+            let mut response = Response::new(Body::from("Something went wrong, please try again later."));
+            let (mut parts, body) = response.into_parts();
+            parts.status = StatusCode::BAD_GATEWAY;
+            response = Response::from_parts(parts, body);
+
+            response
+        }
+    }
 }
 
-impl Service for Proxy {
-    type ReqBody = Body;
-    type ResBody = Body;
+impl Service<hyper::Request<hyper::Body>> for Proxy {
+    type Response = Response<Body>;
     type Error = StringError;
-    type Future = Box<dyn Future<Item=Response<Body>, Error=StringError> + Send>;
+    type Future = Box<dyn Future<Output=Result<Response<Body>, Self::Error>> + Send + Unpin>;
 
-    fn call(&mut self, req: Request<Self::ReqBody>) -> Self::Future {
+    fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn call(&mut self, req: hyper::Request<hyper::Body>) -> Self::Future {
         use std::str::FromStr;
 
         let mut upstream_parts = self.upstream_uri.clone().into_parts();
@@ -121,27 +124,52 @@ impl Service for Proxy {
             })
         }));
 
-        let forwarded_ip = forwarded_ip.and_then(|ip_str| Ipv4Addr::from_str(&ip_str).map(|ip| IpAddr::V4(ip)).ok().or_else(|| Ipv6Addr::from_str(&ip_str).map(|ip| IpAddr::V6(ip)).ok())).or_else(|| self.source_ip);
+        let forwarded_ip = forwarded_ip.and_then(|ip_str| Ipv4Addr::from_str(&ip_str)
+            .map(|ip| IpAddr::V4(ip))
+            .ok()
+            .or_else(|| Ipv6Addr::from_str(&ip_str)
+                .map(|ip| IpAddr::V6(ip))
+                .ok()
+            ))
+            .or_else(|| self.source_ip)
+            .filter(|ip| ip_is_global(&ip) && self.validate_path(upstream_uri.path()));
 
-        let mut outgoing_request = req;
-        *outgoing_request.uri_mut() = upstream_uri;
+        let client = self.client.clone();
+        let resolver = self.resolver.clone();
 
-        if let Some(ip) = forwarded_ip {
-            if ip_is_global(&ip) && self.validate_path(outgoing_request.uri().path()) {
-                let client = self.client.clone();
-                Box::new(injector::inject_basic_hdr(ip, self.resolver.clone()).map_err(|_| StringError("injection failed".to_string())).and_then(move |header_map| {
-                    for (header, value) in header_map {
-                        outgoing_request.headers_mut().insert(HeaderName::from_bytes(header.as_bytes()).expect("should be ok"), HeaderValue::from_str(value.as_str()).expect("should be ok"));
-                    }
-                    gen_transmit_fut(&client, outgoing_request)
-                })) as Box<dyn Future<Item=Response<Body>, Error=StringError> + Send>
+        let fut = Box::pin(async move {
+            let headers = if let Some(ip) = forwarded_ip {
+                Some(injector::get_location_hdr(ip, resolver).await.map_err(|_| StringError("injection failed".to_string())))
             } else {
-                Box::new(gen_transmit_fut(&self.client, outgoing_request)) as Box<dyn Future<Item=Response<Body>, Error=StringError> + Send>
+                None
+            }.transpose();
+
+            match headers {
+                Ok(h) => {
+                    let request = construct_request(req, upstream_uri, h);
+                    Ok(gen_transmit_fut(&client, request).await)
+                }
+                Err(e) => {
+                    Err(e)
+                }
             }
-        } else {
-            Box::new(gen_transmit_fut(&self.client, outgoing_request)) as Box<dyn Future<Item=Response<Body>, Error=StringError> + Send>
+        });
+
+        Box::new(fut) as Box<dyn Future<Output=Result<Response<Body>, StringError>> + Send + Unpin>
+    }
+}
+
+fn construct_request(request: Request<Body>, new_uri: Uri, headers: Option<HashMap<String, String>>) -> Request<Body> {
+    let mut request = request;
+    *request.uri_mut() = new_uri;
+
+    if let Some(map) = headers {
+        for (header, value) in map {
+            request.headers_mut().insert(HeaderName::from_bytes(header.as_bytes()).expect("should be ok"), HeaderValue::from_str(value.as_str()).expect("should be ok"));
         }
     }
+
+    request
 }
 
 pub fn ip_is_global(ip: &IpAddr) -> bool {

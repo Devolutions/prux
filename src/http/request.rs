@@ -1,18 +1,18 @@
-use tokio::prelude::*;
-use hyper::HeaderMap;
+use std::net::IpAddr;
+use std::sync::Arc;
+
+use base64::encode;
+use hyper::{Client, HeaderMap};
 use hyper::header::AUTHORIZATION;
 use serde_json::Value;
-use reqwest::r#async::{Client, Response};
-use base64::encode;
-use std::net::IpAddr;
-use parking_lot::RwLock;
-use std::sync::Arc;
+use futures::lock::Mutex;
+
 use crate::priority_map::PriorityMap;
 
 pub struct Inner {
-    pub client: Client,
+    pub client: Client<hyper_tls::HttpsConnector<hyper::client::HttpConnector>, hyper::Body>,
     pub headers: HeaderMap,
-    pub cache: RwLock<PriorityMap<String, Value>>,
+    pub cache: Mutex<PriorityMap<String, Value>>,
 }
 
 #[derive(Clone)]
@@ -27,36 +27,44 @@ impl HttpRequest {
 
         headers.append(AUTHORIZATION, format!("Basic {}", encoded).parse().expect("should be ok"));
 
-        let client = Client::builder().use_rustls_tls().build().expect("Prux needs OpenSSL for web client.");
+        let connector = hyper_tls::HttpsConnector::new();
+        let client = Client::builder().build(connector);
 
         HttpRequest {
             inner: Arc::new(Inner {
                 client,
                 headers,
-                cache: RwLock::new(PriorityMap::new(cache_capacity)),
+                cache: Mutex::new(PriorityMap::new(cache_capacity)),
             })
         }
     }
 
-    pub fn lookup(&self, addr: &IpAddr) -> impl Future<Item=Value, Error=()> {
-        let self_lazy = self.clone();
-
+    pub async fn lookup(&self, addr: &IpAddr) -> Result<Value, ()> {
         let addr_str = format!("{}", addr);
 
-        let lazy = future::lazy(move || {
-            self_lazy.inner.cache.read().get(&addr_str).cloned().ok_or_else(move || addr_str).map_err(|addr| (self_lazy.clone(), addr))
-        }).or_else(move |(self_req, addr)| {
-            self_req.inner.client
-                .get(&format!("https://geoip.maxmind.com/geoip/v2.1/city/{}", addr))
-                .headers(self_req.inner.headers.clone())
-                .send().map_err(|_| ())
-                .and_then(|mut res: Response| {
-                    res.json::<Value>().map_err(|_| ())
-                }).inspect(move |value| {
-                self_req.inner.cache.write().insert(addr, value.clone());
-            })
-        });
+        let mut cache = self.inner.cache.lock().await;
 
-        lazy
+        if let Some(value) = cache.get(&addr_str) {
+            Ok(value.clone())
+        } else {
+            let mut req = hyper::Request::builder()
+                .method(hyper::Method::GET)
+                .uri(format!("https://geoip.maxmind.com/geoip/v2.1/city/{}", addr_str))
+                .body(hyper::Body::empty()).map_err(|_| ())?;
+
+            for (h_name, h_val) in &self.inner.headers {
+                req.headers_mut().append(h_name.clone(), h_val.clone());
+            }
+
+            let res = self.inner.client.request(req).await.map_err(|_| ())?;
+
+            let bytes = hyper::body::to_bytes(res.into_body()).await.map_err(|_| ())?;
+
+            let json = serde_json::from_slice::<Value>(bytes.as_ref()).map_err(|_| ())?;
+
+            cache.insert(addr_str, json.clone());
+
+            Ok(json)
+        }
     }
 }
