@@ -3,16 +3,16 @@ extern crate serde_derive;
 
 
 use std::env;
+use std::io;
 use std::net;
 use std::net::SocketAddr;
-use std::io;
 
 use dns_lookup::lookup_host;
 use env_logger::Builder;
+use futures::prelude::*;
 use hyper::{Client, Uri};
 use hyper::server::conn::Http;
 use log::LevelFilter;
-use futures::prelude::*;
 use tokio::net::TcpListener;
 
 use crate::http::request::HttpRequest;
@@ -82,39 +82,6 @@ async fn main() -> io::Result<()> {
 
         tokio::spawn(http_proxy);
     }
-
-//    listener.incoming()
-//        .for_each(move |client_socket| {
-//            if let Ok(client_socket) = client_socket {
-//                let client_hpr = client.clone();
-//                let server_uri = server_uri.clone();
-//                let resolver = ip_resolver.clone();
-//                let source = client_socket.peer_addr().ok().map(|sockaddr| sockaddr.ip());
-//                let err_closure = |_| ();
-//
-//                let inclusions = config.server.path_inclusions.split(',').map(|s| s.to_string()).collect::<Vec<String>>();
-//                let exclusions = if let Some(exclusion_string) = config.server.path_exclusions.clone() {
-//                    exclusion_string.split(',').map(|s| s.to_string()).collect::<Vec<String>>()
-//                } else {
-//                    Vec::new()
-//                };
-//
-//                let http_proxy = http.serve_connection(client_socket, Proxy::new(
-//                    server_uri,
-//                    source,
-//                    resolver,
-//                    client_hpr,
-//                    inclusions,
-//                    Some(exclusions),
-//                ));
-//
-//                tokio::spawn(
-//                    async move {
-//                        http_proxy.await;
-//                    }
-//                );
-//            }
-//        }).await;
 
     Ok(())
 }
