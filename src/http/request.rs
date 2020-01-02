@@ -52,9 +52,7 @@ impl HttpRequest {
                 .uri(format!("https://geoip.maxmind.com/geoip/v2.1/city/{}", addr_str))
                 .body(hyper::Body::empty()).map_err(|_| ())?;
 
-            for (h_name, h_val) in &self.inner.headers {
-                req.headers_mut().append(h_name.clone(), h_val.clone());
-            }
+            req.headers_mut().extend(self.inner.headers.clone().into_iter());
 
             let res = self.inner.client.request(req).await.map_err(|_| ())?;
 
