@@ -65,7 +65,7 @@ pub async fn gen_transmit_fut(client: &Client<HttpConnector>, req: Request<Body>
             };
 
             let headers = response.headers_mut();
-            headers.append("proxy-info", HeaderValue::from_str(format!("{} prux-1.1.0", version).as_str()).expect("should be ok"));
+            headers.append("proxy-info", HeaderValue::from_str(format!("HTTP {}", version).as_str()).expect("should be ok"));
 
             response
         }
