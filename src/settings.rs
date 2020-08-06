@@ -1,6 +1,5 @@
 #![allow(dead_code)]
 
-use std;
 use std::io::Write;
 use std::fs::File;
 use log::LevelFilter;
