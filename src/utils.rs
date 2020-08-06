@@ -11,7 +11,7 @@ pub struct UriPathMatcher {
 impl UriPathMatcher {
     pub fn new(path_str: &str) -> Result<UriPathMatcher, String> {
         let path_segment_result = path_str.split('/').filter_map(|ps: &str| {
-            if ps.len() > 0 {
+            if !ps.is_empty() {
                 Some(UriPathSegmentMatcher::new(ps))
             } else {
                 None
@@ -22,7 +22,7 @@ impl UriPathMatcher {
             res.is_ok()
         });
 
-        if err.len() > 0 {
+        if !err.is_empty() {
             return Err(err.remove(0).err().expect("This is never gonna happens"));
         }
 
@@ -35,7 +35,7 @@ impl UriPathMatcher {
 
     pub fn append(&mut self, append: &str) -> Result<(), String> {
         let path_segment_result = append.split('/').filter_map(|ps: &str| {
-            if ps.len() > 0 {
+            if !ps.is_empty() {
                 Some(UriPathSegmentMatcher::new(ps))
             } else {
                 None
@@ -46,7 +46,7 @@ impl UriPathMatcher {
             res.is_ok()
         });
 
-        if err.len() > 0 {
+        if !err.is_empty() {
             return Err(err.remove(0).err().expect("This is never gonna happens"));
         }
 
@@ -97,7 +97,7 @@ impl UriPathSegmentMatcher {
         if segment.starts_with('<') {
             if segment.ends_with('>') {
                 let s: Vec<&str> = segment.trim_start_matches('<').trim_end_matches('>').splitn(2, "#r").collect();
-                if s.len() < 1 {
+                if s.is_empty() {
                     return Err("No name was provided for a variable segment".to_string());
                 }
 

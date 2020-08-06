@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::str::FromStr;
 
-use hyper::{Body, Client, Request, Response, Uri, Version};
+use hyper::{Body, Client, Request, Response, Uri};
 use hyper::client::HttpConnector;
 use hyper::header::{HeaderName, HeaderValue};
 use log::error;
@@ -55,18 +55,7 @@ pub async fn get_location_hdr(ip: IpAddr, resolver: IpResolver) -> Result<HashMa
 
 pub async fn gen_transmit_fut(client: &Client<HttpConnector>, req: Request<Body>) -> Response<Body> {
     match client.request(req).await {
-        Ok(mut response) => {
-            let version = match response.version() {
-                Version::HTTP_09 => "0.9",
-                Version::HTTP_10 => "1.0",
-                Version::HTTP_11 => "1.1",
-                Version::HTTP_2 => "2.0",
-                _ => "2.0"
-            };
-
-            let headers = response.headers_mut();
-            headers.append("proxy-info", HeaderValue::from_str(format!("{} prux-1.1.0", version).as_str()).expect("should be ok"));
-
+        Ok(response) => {
             response
         }
         Err(e) => {
