@@ -1,10 +1,11 @@
 #![allow(dead_code)]
 
-use std::io::Write;
-use std::fs::File;
+use clap::{crate_name, crate_version, Arg, Command};
+use config::{Config, ConfigError, Environment, File as ConfigFile};
 use log::LevelFilter;
-use clap::{crate_name, crate_version, App, Arg};
-use config::{ConfigError, Config, File as ConfigFile, Environment};
+use std::convert::Infallible;
+use std::fs::File;
+use std::io::Write;
 
 const CONFIGURATION_FILE_NAME: &str = "lucid_conf";
 
@@ -37,6 +38,12 @@ impl From<::std::io::Error> for ConfigurationError {
 
 type Result<T> = std::result::Result<T, ConfigurationError>;
 
+impl From<Infallible> for ConfigurationError {
+    fn from(_: Infallible) -> Self {
+        panic!("Infallible error is not supposed to happen by definition.");
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize, Default, Clone)]
 #[serde(default)]
 pub struct Server {
@@ -46,6 +53,7 @@ pub struct Server {
     pub path_inclusions: String,
     pub path_exclusions: Option<String>,
     pub cache_capacity: usize,
+    pub cache_duration_secs: u64,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -56,9 +64,7 @@ pub struct Listener {
 
 impl Default for Listener {
     fn default() -> Self {
-        Listener {
-            port: 7479
-        }
+        Listener { port: 7479 }
     }
 }
 
@@ -80,7 +86,8 @@ impl Default for Settings {
                 maxmind_password: "".to_string(),
                 path_inclusions: "".to_string(),
                 path_exclusions: None,
-                cache_capacity: 2048,
+                cache_capacity: 20480,
+                cache_duration_secs: 60 * 24,
             },
             listener: Default::default(),
         }
@@ -105,20 +112,21 @@ impl Settings {
         let cli_app = create_command_line_app();
         let matches = cli_app.get_matches();
         let default = Config::try_from(&Settings::default())?;
-        let mut conf = Config::new();
-
-        conf.merge(default)?;
+        let mut conf = Config::builder().add_source(default).build()?;
 
         if let Some(path) = matches.value_of("config-file") {
             let p = Path::new(path);
+            #[allow(deprecated)]
             conf.merge(ConfigFile::from(p).required(true))?;
         } else {
+            #[allow(deprecated)]
             conf.merge(ConfigFile::with_name(CONFIGURATION_FILE_NAME).required(false))?;
         }
 
+        #[allow(deprecated)]
         conf.merge(Environment::with_prefix("prux").separator("__"))?;
 
-        let mut settings: Settings = conf.try_into()?;
+        let mut settings: Settings = conf.try_deserialize()?;
 
         // Apply command line arg
 
@@ -147,7 +155,7 @@ impl Settings {
 
             file_path.push(CONFIGURATION_FILE_NAME);
 
-            match matches.value_of("format").unwrap_or_else(|| "TOML") {
+            match matches.value_of("format").unwrap_or("TOML") {
                 "TOML" => {
                     if let Ok(pretty) = toml::to_string_pretty(&settings) {
                         file_path.set_extension("toml");
@@ -188,80 +196,82 @@ impl Settings {
     }
 }
 
-fn create_command_line_app<'a, 'b>() -> App<'a, 'b> {
-    App::new(crate_name!())
+#[allow(deprecated)]
+fn create_command_line_app<'help>() -> Command<'help> {
+    Command::new(crate_name!())
         .author("Richer Archambault & Seb Aubin - Devolutions")
         .version(concat!(crate_version!(), "\n"))
-        .version_short("v")
+        .version_short('v')
         .about("A simple identity server")
-        .arg(Arg::with_name("config-file")
-            .short("c")
+        .arg(Arg::new("config-file")
+            .short('c')
             .long("config")
             .value_name("CONFIGFILE")
             .help("Path of a custom configuration file")
             .takes_value(true)
-            .empty_values(false)
+            .forbid_empty_values(true)
         )
-        .arg(Arg::with_name("log-level")
-            .short("l")
+        .arg(Arg::new("log-level")
+            .short('l')
             .long("level")
             .value_name("LOGLEVEL")
             .help("Verbosity level of the logger")
             .takes_value(true)
             .possible_values(&["off", "error", "warn", "info", "debug", "trace"])
-            .empty_values(false)
+            .forbid_empty_values(true)
         )
-        .arg(Arg::with_name("port")
-            .short("p")
+        .arg(Arg::new("port")
+            .short('p')
             .long("port")
             .value_name("LISTENER_PORT")
             .help("Port used by the router on the default interface. Overrides -u <URL>")
             .takes_value(true)
-            .empty_values(false)
+            .forbid_empty_values(true)
         )
-        .arg(Arg::with_name("server-uri")
-            .short("u")
+        .arg(Arg::new("server-uri")
+            .short('u')
             .long("uri")
             .value_name("SERVER_URI")
             .help("Uri of the server behind the proxy")
             .takes_value(true)
-            .empty_values(false)
+            .forbid_empty_values(true)
         )
-        .arg(Arg::with_name("maxmind-id")
-            .short("i")
+        .arg(Arg::new("maxmind-id")
+            .short('i')
             .long("maxmindid")
             .value_name("MAXMIND_ID")
             .help("Maxmind ID")
             .takes_value(true)
-            .empty_values(false)
+            .forbid_empty_values(true)
         )
-        .arg(Arg::with_name("maxmind-password")
-            .short("s")
+        .arg(Arg::new("maxmind-password")
+            .short('s')
             .long("maxmindpass")
             .value_name("MAXMIND_PASSWORD")
             .help("Maxmind password")
             .takes_value(true)
-            .empty_values(false)
+            .forbid_empty_values(true)
         )
-        .arg(Arg::with_name("save-config")
+        .arg(Arg::new("save-config")
             .long("save-config")
             .value_name("PATH")
             .help("Save the current config at the specified directory (default file format is TOML, see `format` for more)")
             .takes_value(true)
-            .empty_values(false)
+            .forbid_empty_values(true)
         )
-        .arg(Arg::with_name("format")
+        .arg(Arg::new("format")
             .long("format")
             .value_name("FORMAT")
             .help("Use with --save-config: Specifies which format will be used to save configurations")
             .possible_values(&["TOML", "YAML", "JSON"])
             .default_value("TOML")
             .takes_value(true)
-            .empty_values(false)
+            .forbid_empty_values(true)
         )
-        .arg(Arg::with_name("show-config")
+        .arg(Arg::new("show-config")
             .long("show-config")
             .help("Show the current config before startup")
             .takes_value(false)
+            .forbid_empty_values(false)
         )
 }
