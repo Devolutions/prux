@@ -113,40 +113,46 @@ impl<K: Eq + Hash + Clone + Debug, V: Debug> PriorityMap<K, V> {
     }
 }
 
-#[test]
-pub fn test_capacity() {
-    let mut map = PriorityMap::new(5, Duration::from_secs(5), Duration::from_secs(5));
-    for i in 0..6 {
-        map.insert(i, i);
-    }
-    assert_eq!(map.len(), 5);
-}
+#[cfg(test)]
+mod tests {
+    use super::PriorityMap;
+    use std::time::Duration;
 
-#[test]
-pub fn test_prune_order() {
-    let mut map = PriorityMap::new(5, Duration::from_secs(5), Duration::from_secs(5));
-    for i in 0..6 {
-        map.insert(i, i);
+    #[test]
+    pub fn test_capacity() {
+        let mut map = PriorityMap::new(5, Duration::from_secs(5), Duration::from_secs(5));
+        for i in 0..6 {
+            map.insert(i, i);
+        }
+        assert_eq!(map.len(), 5);
     }
-    assert_eq!(map.get_mut(&0), None);
-    map.insert(1, 1);
-    map.insert(6, 6);
-    assert_eq!(map.get_mut(&1), Some(&mut 1));
-    assert_eq!(map.get_mut(&2), None);
-}
 
-#[test]
-pub fn test_prune_expired() {
-    use std::thread::sleep;
-
-    let mut map = PriorityMap::new(4, Duration::from_secs(2), Duration::from_secs(2));
-    for i in 0..3 {
-        map.insert(i, i);
+    #[test]
+    pub fn test_prune_order() {
+        let mut map = PriorityMap::new(5, Duration::from_secs(5), Duration::from_secs(5));
+        for i in 0..6 {
+            map.insert(i, i);
+        }
+        assert_eq!(map.get_mut(&0), None);
+        map.insert(1, 1);
+        map.insert(6, 6);
+        assert_eq!(map.get_mut(&1), Some(&mut 1));
+        assert_eq!(map.get_mut(&2), None);
     }
-    sleep(Duration::from_secs(1));
-    map.insert(3, 3);
-    assert_eq!(map.len(), 4);
-    sleep(Duration::from_secs(1));
-    map.insert(4, 4);
-    assert_eq!(map.len(), 2);
+
+    #[test]
+    pub fn test_prune_expired() {
+        use std::thread::sleep;
+
+        let mut map = PriorityMap::new(4, Duration::from_secs(2), Duration::from_secs(2));
+        for i in 0..3 {
+            map.insert(i, i);
+        }
+        sleep(Duration::from_secs(1));
+        map.insert(3, 3);
+        assert_eq!(map.len(), 4);
+        sleep(Duration::from_secs(1));
+        map.insert(4, 4);
+        assert_eq!(map.len(), 2);
+    }
 }
