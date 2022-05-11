@@ -5,7 +5,7 @@ use std::slice::Iter;
 
 #[derive(Debug)]
 pub struct UriPathMatcher {
-    inner: Vec<UriPathSegmentMatcher>
+    inner: Vec<UriPathSegmentMatcher>,
 }
 
 impl UriPathMatcher {
@@ -18,19 +18,15 @@ impl UriPathMatcher {
             }
         });
 
-        let (ok, mut err): (Vec<Result<UriPathSegmentMatcher, String>>, Vec<Result<UriPathSegmentMatcher, String>>) = path_segment_result.partition(|res| {
-            res.is_ok()
-        });
+        let (ok, mut err): (Vec<_>, Vec<_>) = path_segment_result.partition(|res| res.is_ok());
 
         if !err.is_empty() {
-            return Err(err.remove(0).err().expect("This is never gonna happens"));
+            return Err(err.remove(0).expect_err("This is never gonna happens"));
         }
 
         let inner = ok.into_iter().map(|res| res.unwrap()).collect();
 
-        Ok(UriPathMatcher {
-            inner
-        })
+        Ok(UriPathMatcher { inner })
     }
 
     pub fn append(&mut self, append: &str) -> Result<(), String> {
@@ -42,12 +38,10 @@ impl UriPathMatcher {
             }
         });
 
-        let (ok, mut err): (Vec<Result<UriPathSegmentMatcher, String>>, Vec<Result<UriPathSegmentMatcher, String>>) = path_segment_result.partition(|res| {
-            res.is_ok()
-        });
+        let (ok, mut err): (Vec<_>, Vec<_>) = path_segment_result.partition(|res| res.is_ok());
 
         if !err.is_empty() {
-            return Err(err.remove(0).err().expect("This is never gonna happens"));
+            return Err(err.remove(0).expect_err("This is never gonna happens"));
         }
 
         self.inner.extend(ok.into_iter().map(|res| res.unwrap()));
@@ -59,7 +53,7 @@ impl UriPathMatcher {
         let mut path_split = path.trim_start_matches('/').split('/');
 
         for segment in &self.inner {
-            if let Some(ref s) = path_split.next() {
+            if let Some(s) = path_split.next() {
                 if !segment.matches(s) {
                     return false;
                 }
@@ -82,9 +76,16 @@ impl UriPathMatcher {
 
 #[derive(Debug)]
 pub enum UriPathSegmentMatcher {
-    Static { segment: String },
-    Variable { name: Option<String> },
-    Custom { name: Option<String>, segment: Regex },
+    Static {
+        segment: String,
+    },
+    Variable {
+        name: Option<String>,
+    },
+    Custom {
+        name: Option<String>,
+        segment: Regex,
+    },
 }
 
 impl UriPathSegmentMatcher {
@@ -96,7 +97,11 @@ impl UriPathSegmentMatcher {
 
         if segment.starts_with('<') {
             if segment.ends_with('>') {
-                let s: Vec<&str> = segment.trim_start_matches('<').trim_end_matches('>').splitn(2, "#r").collect();
+                let s: Vec<&str> = segment
+                    .trim_start_matches('<')
+                    .trim_end_matches('>')
+                    .splitn(2, "#r")
+                    .collect();
                 if s.is_empty() {
                     return Err("No name was provided for a variable segment".to_string());
                 }
@@ -109,15 +114,21 @@ impl UriPathSegmentMatcher {
 
                 let name_c = name.clone();
 
-                s.get(1).map(|r| {
-                    let r = r.trim_start_matches('(').trim_end_matches(')');
-                    Regex::new(r).map_err(|e| e.to_string()).map(|r| UriPathSegmentMatcher::Custom { name, segment: r })
-                }).unwrap_or_else(|| Ok(UriPathSegmentMatcher::Variable { name: name_c }))
+                s.get(1)
+                    .map(|r| {
+                        let r = r.trim_start_matches('(').trim_end_matches(')');
+                        Regex::new(r)
+                            .map_err(|e| e.to_string())
+                            .map(|r| UriPathSegmentMatcher::Custom { name, segment: r })
+                    })
+                    .unwrap_or_else(|| Ok(UriPathSegmentMatcher::Variable { name: name_c }))
             } else {
                 Err("A variable path segment should start with < & end with >".to_string())
             }
         } else {
-            Ok(UriPathSegmentMatcher::Static { segment: segment.to_string() })
+            Ok(UriPathSegmentMatcher::Static {
+                segment: segment.to_string(),
+            })
         }
     }
 
@@ -126,7 +137,10 @@ impl UriPathSegmentMatcher {
         match self {
             UriPathSegmentMatcher::Static { segment: ref s } => s.eq(other),
             UriPathSegmentMatcher::Variable { name: ref _n } => true,
-            UriPathSegmentMatcher::Custom { name: ref _n, segment: ref s } => s.is_match(other),
+            UriPathSegmentMatcher::Custom {
+                name: ref _n,
+                segment: ref s,
+            } => s.is_match(other),
         }
     }
 
@@ -134,15 +148,15 @@ impl UriPathSegmentMatcher {
         match self {
             UriPathSegmentMatcher::Static { segment: ref _s } => None,
             UriPathSegmentMatcher::Variable { name: ref n } => n.as_ref().map(|s| s.as_str()),
-            UriPathSegmentMatcher::Custom { name: ref n, segment: ref _s } => n.as_ref().map(|s| s.as_str()),
+            UriPathSegmentMatcher::Custom {
+                name: ref n,
+                segment: ref _s,
+            } => n.as_ref().map(|s| s.as_str()),
         }
     }
 
     pub fn is_static(&self) -> bool {
-        match self {
-            UriPathSegmentMatcher::Static {segment: ref _s} => true,
-            _ => false
-        }
+        matches!(self, UriPathSegmentMatcher::Static { segment: ref _s })
     }
 }
 
@@ -178,7 +192,7 @@ impl ToRegex for String {
     }
 
     fn as_str(&self) -> &str {
-        &self
+        self
     }
 }
 
@@ -190,13 +204,4 @@ impl ToRegex for ::regex::Regex {
     fn as_str(&self) -> &str {
         self.as_str()
     }
-}
-
-#[macro_export]
-/// Convert a str to a regex
-macro_rules! reg {
-    ($str_regex:expr) => {
-        $str_regex.to_regex().expect("the parameter passed to reg macro is not a legitimate regex")
-    };
-
 }
