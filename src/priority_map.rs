@@ -42,14 +42,18 @@ impl<K: Eq + Hash + Clone + Debug, V: Debug> PriorityMap<K, V> {
             self.prune_last();
         }
 
-        self.priority.lock().push(key.clone(), Reverse(SystemTime::now()));
+        self.priority
+            .lock()
+            .push(key.clone(), Reverse(SystemTime::now()));
         self.data.insert(key, value)
     }
 
     #[allow(unused)]
     pub fn get(&self, key: &K) -> Option<&V> {
         if let Some(value) = self.data.get(key) {
-            self.priority.lock().push(key.clone(), Reverse(SystemTime::now()));
+            self.priority
+                .lock()
+                .push(key.clone(), Reverse(SystemTime::now()));
             Some(value)
         } else {
             None
@@ -60,7 +64,9 @@ impl<K: Eq + Hash + Clone + Debug, V: Debug> PriorityMap<K, V> {
     pub fn get_mut(&mut self, key: &K) -> Option<&mut V> {
         self.check_prune();
         if let Some(value) = self.data.get_mut(key) {
-            self.priority.lock().push(key.clone(), Reverse(SystemTime::now()));
+            self.priority
+                .lock()
+                .push(key.clone(), Reverse(SystemTime::now()));
             Some(value)
         } else {
             None
