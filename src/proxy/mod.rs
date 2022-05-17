@@ -132,7 +132,7 @@ impl Service<hyper::Request<hyper::Body>> for Proxy {
 
         let forwarded_ip = get_forwarded_ip(&req)
             .or(self.source_ip)
-            .filter(|ip| ip_is_global(ip));
+            .filter(ip_is_global);
 
         let client = self.client.clone();
         let resolver = self.resolver.clone();
