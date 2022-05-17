@@ -2,7 +2,7 @@
 # BUILD CONTAINER
 # ++++++++++++++++++++++++++++++++
 
-FROM rust:1.37-stretch as rust-build
+FROM rust:latest as rust-build
 LABEL maintainer "Devolutions Inc."
 
 WORKDIR /rust/prux
@@ -15,7 +15,7 @@ RUN cargo build --release
 # PRODUCTION CONTAINER
 # ++++++++++++++++++++++++++++++++
 
-FROM debian:stretch-slim
+FROM debian:stable-slim
 LABEL maintainer "Devolutions Inc."
 
 WORKDIR /etc/prux
