@@ -18,7 +18,7 @@ on:
       DOCKER_HUB_BOT_PASSWORD:
         required: true
       GH_INFRA_PAT:
-        required: true
+        required: false
 
 jobs:
   build:
