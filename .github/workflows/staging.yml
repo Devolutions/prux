@@ -15,5 +15,5 @@ jobs:
       tag: latest
     secrets:
       DEVOLUTIONSBOT_TOKEN: ${{ secrets.DEVOLUTIONSBOT_TOKEN }}
-      DOCKER_HUB_BOT_PASSWORD: ${{ secrets.DOCKER_HUB_BOT_PASSWORD }}
+      DOCKER_HUB_ACCESS_TOKEN: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
       GH_INFRA_PAT: ${{ secrets.GH_INFRA_PAT }}
