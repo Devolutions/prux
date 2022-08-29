@@ -27,15 +27,16 @@ impl std::fmt::Display for StringError {
 
 impl std::error::Error for StringError {}
 
+pub async fn add_ip_hdr(ip: &IpAddr, hdr_map: &mut HashMap<String, String>) {
+    hdr_map.insert(PRUX_ADDR.to_string(), ip.to_string());
+}
+
 pub async fn get_location_hdr(
     ip: IpAddr,
     resolver: IpResolver,
-) -> Result<HashMap<String, String>, ()> {
+    hdr_map: &mut HashMap<String, String>,
+) -> Result<(), ()> {
     let json = resolver.lookup(&ip).await?;
-
-    let mut hdr_map = HashMap::new();
-
-    hdr_map.insert(PRUX_ADDR.to_string(), ip.to_string());
 
     if let Some(Some(city_name_en)) = json
         .get("city")
@@ -64,7 +65,7 @@ pub async fn get_location_hdr(
         hdr_map.insert(PRUX_COORD.to_string(), format!("{},{}", lat, long));
     }
 
-    Ok(hdr_map)
+    Ok(())
 }
 
 pub async fn gen_transmit_fut(

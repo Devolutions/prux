@@ -1,0 +1,19 @@
+name: Staging - Build & Publish
+on:
+  push:
+    branches:
+      - master
+
+concurrency: prux_staging
+
+jobs:
+  staging:
+    uses: ./.github/workflows/shared.yml
+    with:
+      environment: staging
+      ref: master
+      tag: latest
+    secrets:
+      DEVOLUTIONSBOT_TOKEN: ${{ secrets.DEVOLUTIONSBOT_TOKEN }}
+      DOCKER_HUB_ACCESS_TOKEN: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
+      GH_INFRA_PAT: ${{ secrets.GH_INFRA_PAT }}

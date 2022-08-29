@@ -1,6 +1,6 @@
 [package]
 name = "prux"
-version = "2.1.0"
+version = "2.1.2"
 authors = ["richerarc <richer.arc@gmail.com>", "LucFauvel <luc.fauvel@hotmail.com>"]
 edition = "2021"
 

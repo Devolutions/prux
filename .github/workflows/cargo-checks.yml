@@ -1,0 +1,35 @@
+name: fmt, clippy & test
+
+on:
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v2
+        with:
+          token: ${{ secrets.DEVOLUTIONSBOT_TOKEN }}
+          submodules: true
+
+      - name: Check out Devolutions/actions
+        uses: actions/checkout@v3
+        with:
+          repository: Devolutions/actions
+          ref: master
+          token: ${{ secrets.DEVOLUTIONSBOT_TOKEN }}
+          path: ./.github/workflows
+
+      - uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/**
+            ./target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Rust checks
+        uses: ./.github/workflows/rust-checks

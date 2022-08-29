@@ -50,7 +50,8 @@ pub struct Server {
     pub uri: String,
     pub maxmind_id: String,
     pub maxmind_password: String,
-    pub path_inclusions: String,
+    pub maxmind_path_inclusions: String,
+    pub ip_path_inclusions: String,
     pub path_exclusions: Option<String>,
     pub cache_capacity: usize,
     pub cache_duration_secs: u64,
@@ -86,7 +87,8 @@ impl Default for Settings {
                 uri: "".to_string(),
                 maxmind_id: "".to_string(),
                 maxmind_password: "".to_string(),
-                path_inclusions: "".to_string(),
+                maxmind_path_inclusions: "".to_string(),
+                ip_path_inclusions: "".to_string(),
                 path_exclusions: None,
                 cache_capacity: 20480,
                 cache_duration_secs: 60 * 24,
@@ -125,7 +127,11 @@ impl Settings {
             conf = conf.add_source(ConfigFile::with_name(CONFIGURATION_FILE_NAME).required(false));
         }
 
-        conf = conf.add_source(Environment::with_prefix("prux").prefix_separator("__").separator("__"));
+        conf = conf.add_source(
+            Environment::with_prefix("prux")
+                .prefix_separator("__")
+                .separator("__"),
+        );
 
         let mut settings: Settings = conf.build()?.try_deserialize()?;
 

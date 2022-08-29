@@ -73,9 +73,15 @@ async fn main() -> io::Result<()> {
         let resolver = ip_resolver.clone();
         let source = addr.ip();
 
-        let inclusions = config
+        let ip_inclusions = config
             .server
-            .path_inclusions
+            .ip_path_inclusions
+            .split(',')
+            .map(|s| s.to_string())
+            .collect::<Vec<String>>();
+        let maxmind_inclusions = config
+            .server
+            .maxmind_path_inclusions
             .split(',')
             .map(|s| s.to_string())
             .collect::<Vec<String>>();
@@ -95,7 +101,8 @@ async fn main() -> io::Result<()> {
                 Some(source),
                 resolver,
                 client_hpr,
-                inclusions,
+                ip_inclusions,
+                maxmind_inclusions,
                 Some(exclusions),
                 config.server.forwarded_ip_header.clone(),
                 config.server.use_forwarded_ip_header_only,
