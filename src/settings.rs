@@ -116,21 +116,18 @@ impl Settings {
         let cli_app = create_command_line_app();
         let matches = cli_app.get_matches();
         let default = Config::try_from(&Settings::default())?;
-        let mut conf = Config::builder().add_source(default).build()?;
+        let mut conf = Config::builder().add_source(default);
 
         if let Some(path) = matches.value_of("config-file") {
             let p = Path::new(path);
-            #[allow(deprecated)]
-            conf.merge(ConfigFile::from(p).required(true))?;
+            conf = conf.add_source(ConfigFile::from(p).required(true));
         } else {
-            #[allow(deprecated)]
-            conf.merge(ConfigFile::with_name(CONFIGURATION_FILE_NAME).required(false))?;
+            conf = conf.add_source(ConfigFile::with_name(CONFIGURATION_FILE_NAME).required(false));
         }
 
-        #[allow(deprecated)]
-        conf.merge(Environment::with_prefix("prux").separator("__"))?;
+        conf = conf.add_source(Environment::with_prefix("prux").prefix_separator("__").separator("__"));
 
-        let mut settings: Settings = conf.try_deserialize()?;
+        let mut settings: Settings = conf.build()?.try_deserialize()?;
 
         // Apply command line arg
 
