@@ -22,6 +22,8 @@ pub struct Proxy {
     pub client: Client<HttpsConnector<HttpConnector>>,
     pub path_inclusions: Vec<UriPathMatcher>,
     pub path_exclusions: Option<Vec<UriPathMatcher>>,
+    pub forwarded_ip_header: Option<String>,
+    pub use_forwarded_ip_header_only: bool,
 }
 
 impl Proxy {
@@ -32,6 +34,8 @@ impl Proxy {
         client: Client<HttpsConnector<HttpConnector>>,
         inclusions: Vec<String>,
         exclusions: Option<Vec<String>>,
+        forwarded_ip_header: Option<String>,
+        use_forwarded_ip_header_only: bool,
     ) -> Self {
         Proxy {
             upstream_uri,
@@ -57,6 +61,8 @@ impl Proxy {
                     .collect()
             }),
             resolver,
+            forwarded_ip_header,
+            use_forwarded_ip_header_only,
         }
     }
 
@@ -92,7 +98,7 @@ impl Service<hyper::Request<hyper::Body>> for Proxy {
 
         let upstream_uri = Uri::from_parts(upstream_parts).expect("Url must be valid");
 
-        let forwarded_ip = get_forwarded_ip(&req)
+        let forwarded_ip = get_forwarded_ip(&req, self.forwarded_ip_header.as_deref(), self.use_forwarded_ip_header_only)
             .or(self.source_ip)
             .filter(|ip| ip_is_global(ip) && self.validate_path(upstream_uri.path()));
 

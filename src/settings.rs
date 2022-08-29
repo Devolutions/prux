@@ -54,6 +54,8 @@ pub struct Server {
     pub path_exclusions: Option<String>,
     pub cache_capacity: usize,
     pub cache_duration_secs: u64,
+    pub forwarded_ip_header: Option<String>,
+    pub use_forwarded_ip_header_only: bool,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -88,6 +90,8 @@ impl Default for Settings {
                 path_exclusions: None,
                 cache_capacity: 20480,
                 cache_duration_secs: 60 * 24,
+                forwarded_ip_header: None,
+                use_forwarded_ip_header_only: false,
             },
             listener: Default::default(),
         }
