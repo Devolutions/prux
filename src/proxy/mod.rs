@@ -29,6 +29,7 @@ pub struct Proxy {
 }
 
 impl Proxy {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         upstream_uri: Uri,
         source_ip: Option<IpAddr>,
@@ -136,7 +137,11 @@ impl Service<hyper::Request<hyper::Body>> for Proxy {
         let valid_maxmind = self.validate_maxmind_path(upstream_uri.path());
         let valid_ip = self.validate_ip_path(upstream_uri.path());
 
-        let forwarded_ip = get_forwarded_ip(&req, self.forwarded_ip_header.as_deref(), self.use_forwarded_ip_header_only);
+        let forwarded_ip = get_forwarded_ip(
+            &req,
+            self.forwarded_ip_header.as_deref(),
+            self.use_forwarded_ip_header_only,
+        );
 
         let forwarded_ip = if self.use_forwarded_ip_header_only {
             forwarded_ip.filter(ip_is_global)

@@ -121,18 +121,28 @@ pub fn ip_is_global(ip: &IpAddr) -> bool {
     }
 }
 
-pub fn get_forwarded_ip(req: &Request<Body>, forwarded_ip_header: Option<&str>, use_forwarded_ip_header_only: bool) -> Option<IpAddr> {
-    get_forwarded_ip_from_headers(req.headers(), forwarded_ip_header, use_forwarded_ip_header_only)
+pub fn get_forwarded_ip(
+    req: &Request<Body>,
+    forwarded_ip_header: Option<&str>,
+    use_forwarded_ip_header_only: bool,
+) -> Option<IpAddr> {
+    get_forwarded_ip_from_headers(
+        req.headers(),
+        forwarded_ip_header,
+        use_forwarded_ip_header_only,
+    )
 }
 
-fn get_forwarded_ip_from_headers(headers: &HeaderMap, forwarded_ip_header: Option<&str>, use_forwarded_ip_header_only: bool) -> Option<IpAddr> {
+fn get_forwarded_ip_from_headers(
+    headers: &HeaderMap,
+    forwarded_ip_header: Option<&str>,
+    use_forwarded_ip_header_only: bool,
+) -> Option<IpAddr> {
     let mut ip_str = forwarded_ip_header.and_then(|header| {
         headers
             .get(header)
             .map(|value| String::from_utf8_lossy(value.as_bytes()))
-            .map(|str_val| {
-                str_val.trim().to_lowercase()
-            })
+            .map(|str_val| str_val.trim().to_lowercase())
     });
 
     if !use_forwarded_ip_header_only {
@@ -308,7 +318,10 @@ mod tests {
         let ip = r#"203.0.113.42"#;
         let header_name = Some("CF-Connecting-IP".to_string());
         let mut headers = HeaderMap::with_capacity(1);
-        headers.insert(HeaderName::from_str(header_name.as_deref().unwrap()).unwrap(), HeaderValue::from_str(ip).unwrap());
+        headers.insert(
+            HeaderName::from_str(header_name.as_deref().unwrap()).unwrap(),
+            HeaderValue::from_str(ip).unwrap(),
+        );
         assert_eq!(
             get_forwarded_ip_from_headers(&headers, header_name.as_deref(), false),
             IpAddr::from_str(ip).ok(),
