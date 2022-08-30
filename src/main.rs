@@ -104,6 +104,8 @@ async fn main() -> io::Result<()> {
                 ip_inclusions,
                 maxmind_inclusions,
                 Some(exclusions),
+                config.server.forwarded_ip_header.clone(),
+                config.server.use_forwarded_ip_header_only,
             ),
         );
 

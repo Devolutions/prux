@@ -121,12 +121,46 @@ pub fn ip_is_global(ip: &IpAddr) -> bool {
     }
 }
 
-pub fn get_forwarded_ip(req: &Request<Body>) -> Option<IpAddr> {
-    get_forwarded_ip_from_headers(req.headers())
+pub fn get_forwarded_ip(
+    req: &Request<Body>,
+    forwarded_ip_header: Option<&str>,
+    use_forwarded_ip_header_only: bool,
+) -> Option<IpAddr> {
+    get_forwarded_ip_from_headers(
+        req.headers(),
+        forwarded_ip_header,
+        use_forwarded_ip_header_only,
+    )
 }
 
-fn get_forwarded_ip_from_headers(headers: &HeaderMap) -> Option<IpAddr> {
-    let x_forwarded_ip: Option<String> = headers
+fn get_forwarded_ip_from_headers(
+    headers: &HeaderMap,
+    forwarded_ip_header: Option<&str>,
+    use_forwarded_ip_header_only: bool,
+) -> Option<IpAddr> {
+    let mut ip_str = forwarded_ip_header.and_then(|header| {
+        headers
+            .get(header)
+            .map(|value| String::from_utf8_lossy(value.as_bytes()))
+            .map(|str_val| str_val.trim().to_lowercase())
+    });
+
+    if !use_forwarded_ip_header_only {
+        ip_str = ip_str
+            .or_else(|| get_ip_str_from_x_forwarded_header(headers))
+            .or_else(|| get_ip_str_from_forwarded_header(headers));
+    }
+
+    ip_str.and_then(|ip_str| {
+        Ipv4Addr::from_str(&ip_str)
+            .map(IpAddr::V4)
+            .ok()
+            .or_else(|| Ipv6Addr::from_str(&ip_str).map(IpAddr::V6).ok())
+    })
+}
+
+fn get_ip_str_from_x_forwarded_header(headers: &HeaderMap) -> Option<String> {
+    headers
         .get("X-Forwarded-For")
         .map(|value| String::from_utf8_lossy(value.as_bytes()))
         .map(|str_val| {
@@ -136,28 +170,21 @@ fn get_forwarded_ip_from_headers(headers: &HeaderMap) -> Option<IpAddr> {
                 .trim()
                 .trim_matches(IPV6_FORWARDED_TRIM_VALUE)
                 .to_lowercase()
-        });
+        })
+}
 
-    let forwarded_ip = x_forwarded_ip.or_else(|| {
-        headers
-            .get("Forwarded")
-            .map(|value| String::from_utf8_lossy(value.as_bytes()))
-            .and_then(|str_val| {
-                str_val.to_lowercase().split(';').find_map(|s| {
-                    s.split_once("for=")
-                        .map(|s| s.1)
-                        .map(|s| s.split_once(',').map_or(s, |s| s.0).trim())
-                        .map(|s| s.trim_matches(IPV6_FORWARDED_TRIM_VALUE).to_string())
-                })
+fn get_ip_str_from_forwarded_header(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get("Forwarded")
+        .map(|value| String::from_utf8_lossy(value.as_bytes()))
+        .and_then(|str_val| {
+            str_val.to_lowercase().split(';').find_map(|s| {
+                s.split_once("for=")
+                    .map(|s| s.1)
+                    .map(|s| s.split_once(',').map_or(s, |s| s.0).trim())
+                    .map(|s| s.trim_matches(IPV6_FORWARDED_TRIM_VALUE).to_string())
             })
-    });
-
-    forwarded_ip.and_then(|ip_str| {
-        Ipv4Addr::from_str(&ip_str)
-            .map(IpAddr::V4)
-            .ok()
-            .or_else(|| Ipv6Addr::from_str(&ip_str).map(IpAddr::V6).ok())
-    })
+        })
 }
 
 #[cfg(test)]
@@ -190,7 +217,7 @@ mod tests {
         let forwarded = "for=192.0.2.43";
         let headers = build_test_header(Some(forwarded), None);
         assert_eq!(
-            get_forwarded_ip_from_headers(&headers),
+            get_forwarded_ip_from_headers(&headers, None, false),
             IpAddr::from_str("192.0.2.43").ok(),
             r#"testing simple ipv4 Forwarded header : "Fowrarded: {}""#,
             forwarded
@@ -199,7 +226,7 @@ mod tests {
         let forwarded = r#"for="[2001:db8:cafe::17]""#;
         let headers = build_test_header(Some(forwarded), None);
         assert_eq!(
-            get_forwarded_ip_from_headers(&headers),
+            get_forwarded_ip_from_headers(&headers, None, false),
             IpAddr::from_str("2001:db8:cafe::17").ok(),
             r#"testing simple ipv6 Forwarded header : "Fowrarded: {}""#,
             forwarded
@@ -208,7 +235,7 @@ mod tests {
         let forwarded = r#"for=192.0.2.44, for="[2001:db8:cafe::17]""#;
         let headers = build_test_header(Some(forwarded), None);
         assert_eq!(
-            get_forwarded_ip_from_headers(&headers),
+            get_forwarded_ip_from_headers(&headers, None, false),
             IpAddr::from_str("192.0.2.44").ok(),
             r#"testing Forwarded header with multiple for : "Fowrarded: {}""#,
             forwarded
@@ -217,7 +244,7 @@ mod tests {
         let forwarded = r#"for=192.0.2.45  ,  for="[2001:db8:cafe::17]""#;
         let headers = build_test_header(Some(forwarded), None);
         assert_eq!(
-            get_forwarded_ip_from_headers(&headers),
+            get_forwarded_ip_from_headers(&headers, None, false),
             IpAddr::from_str("192.0.2.45").ok(),
             r#"testing Forwarded header with multiple for and whitespaces : "Fowrarded: {}""#,
             forwarded
@@ -226,7 +253,7 @@ mod tests {
         let forwarded = r#"by=203.0.113.42;for=192.0.2.46, for="[2001:db8:cafe::17]""#;
         let headers = build_test_header(Some(forwarded), None);
         assert_eq!(
-            get_forwarded_ip_from_headers(&headers),
+            get_forwarded_ip_from_headers(&headers, None, false),
             IpAddr::from_str("192.0.2.46").ok(),
             r#"testing Forwarded header "by" clause : "Fowrarded: {}""#,
             forwarded
@@ -238,7 +265,7 @@ mod tests {
         let x_forwarded_for = "192.0.2.43";
         let headers = build_test_header(None, Some(x_forwarded_for));
         assert_eq!(
-            get_forwarded_ip_from_headers(&headers),
+            get_forwarded_ip_from_headers(&headers, None, false),
             IpAddr::from_str("192.0.2.43").ok(),
             r#"testing simple ipv4 X-Forwarded-For header : "X-Fowrarded-For: {}""#,
             x_forwarded_for
@@ -247,7 +274,7 @@ mod tests {
         let x_forwarded_for = r#"192.0.2.44, "[2001:db8:cafe::17]""#;
         let headers = build_test_header(None, Some(x_forwarded_for));
         assert_eq!(
-            get_forwarded_ip_from_headers(&headers),
+            get_forwarded_ip_from_headers(&headers, None, false),
             IpAddr::from_str("192.0.2.44").ok(),
             r#"testing simple ipv4 X-Forwarded-For header with proxies : "X-Fowrarded-For: {}""#,
             x_forwarded_for
@@ -256,7 +283,7 @@ mod tests {
         let x_forwarded_for = r#"2001:db8:cafe::17"#;
         let headers = build_test_header(None, Some(x_forwarded_for));
         assert_eq!(
-            get_forwarded_ip_from_headers(&headers),
+            get_forwarded_ip_from_headers(&headers, None, false),
             IpAddr::from_str("2001:db8:cafe::17").ok(),
             r#"testing simple ipv6 X-Forwarded-For header : "X-Fowrarded-For: {}""#,
             x_forwarded_for
@@ -265,7 +292,7 @@ mod tests {
         let x_forwarded_for = r#""[2001:db8:cafe::17]""#;
         let headers = build_test_header(None, Some(x_forwarded_for));
         assert_eq!(
-            get_forwarded_ip_from_headers(&headers),
+            get_forwarded_ip_from_headers(&headers, None, false),
             IpAddr::from_str("2001:db8:cafe::17").ok(),
             r#"testing simple ipv6 X-Forwarded-For header with "Forwarded"-style delimiters : "X-Fowrarded-For: {}""#,
             x_forwarded_for
@@ -278,11 +305,27 @@ mod tests {
         let x_forwarded_for = r#"192.0.2.44, "[2001:db8:cafe::17]""#;
         let headers = build_test_header(Some(forwarded), Some(x_forwarded_for));
         assert_eq!(
-            get_forwarded_ip_from_headers(&headers),
+            get_forwarded_ip_from_headers(&headers, None, false),
             IpAddr::from_str("192.0.2.44").ok(),
             "Testing \"X-Fowrarded-For\" priority over \"Forwarded\"; Headers: \n\"X-Forwarded-For: {}\"\n\"Forwarded: {}\"",
             x_forwarded_for,
             forwarded
+        );
+    }
+
+    #[test]
+    fn custom_ip_forwarding_header() {
+        let ip = r#"203.0.113.42"#;
+        let header_name = Some("CF-Connecting-IP".to_string());
+        let mut headers = HeaderMap::with_capacity(1);
+        headers.insert(
+            HeaderName::from_str(header_name.as_deref().unwrap()).unwrap(),
+            HeaderValue::from_str(ip).unwrap(),
+        );
+        assert_eq!(
+            get_forwarded_ip_from_headers(&headers, header_name.as_deref(), false),
+            IpAddr::from_str(ip).ok(),
+            r#"Testing custom forwarded ip header with header name "CF-Connecting-IP""#,
         );
     }
 }

@@ -9,3 +9,5 @@
 **/*.rs.bk
 .idea/
 .DS_Store
+
+lucid_conf.toml

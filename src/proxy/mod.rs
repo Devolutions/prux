@@ -24,9 +24,12 @@ pub struct Proxy {
     pub ip_path_inclusions: Vec<UriPathMatcher>,
     pub maxmind_path_inclusions: Vec<UriPathMatcher>,
     pub path_exclusions: Option<Vec<UriPathMatcher>>,
+    pub forwarded_ip_header: Option<String>,
+    pub use_forwarded_ip_header_only: bool,
 }
 
 impl Proxy {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         upstream_uri: Uri,
         source_ip: Option<IpAddr>,
@@ -35,6 +38,8 @@ impl Proxy {
         ip_inclusions: Vec<String>,
         maxmind_inclusions: Vec<String>,
         exclusions: Option<Vec<String>>,
+        forwarded_ip_header: Option<String>,
+        use_forwarded_ip_header_only: bool,
     ) -> Self {
         Proxy {
             upstream_uri,
@@ -68,6 +73,8 @@ impl Proxy {
                     .collect()
             }),
             resolver,
+            forwarded_ip_header,
+            use_forwarded_ip_header_only,
         }
     }
 
@@ -130,9 +137,17 @@ impl Service<hyper::Request<hyper::Body>> for Proxy {
         let valid_maxmind = self.validate_maxmind_path(upstream_uri.path());
         let valid_ip = self.validate_ip_path(upstream_uri.path());
 
-        let forwarded_ip = get_forwarded_ip(&req)
-            .or(self.source_ip)
-            .filter(ip_is_global);
+        let forwarded_ip = get_forwarded_ip(
+            &req,
+            self.forwarded_ip_header.as_deref(),
+            self.use_forwarded_ip_header_only,
+        );
+
+        let forwarded_ip = if self.use_forwarded_ip_header_only {
+            forwarded_ip.filter(ip_is_global)
+        } else {
+            forwarded_ip.or(self.source_ip).filter(ip_is_global)
+        };
 
         let client = self.client.clone();
         let resolver = self.resolver.clone();
