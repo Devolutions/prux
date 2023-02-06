@@ -1,4 +1,4 @@
-FROM debian:stable-slim
+FROM ubuntu:22.04
 LABEL maintainer "Devolutions Inc."
 
 ENV USER=lucid
@@ -7,9 +7,7 @@ WORKDIR /etc/prux
 
 RUN useradd -m -s /bin/bash ${USER}
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libssl1.1 \
     ca-certificates \
-    libcurl4-openssl-dev \
 && rm -rf /var/lib/apt/lists/*
 
 USER ${USER}

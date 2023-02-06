@@ -22,7 +22,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     steps:
       - name: Check out ${{ github.repository }}
@@ -56,7 +56,7 @@ jobs:
             target/release/prux
 
   build_image:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     environment: ${{ inputs.environment }}
     needs: [build]
 
