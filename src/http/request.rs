@@ -22,7 +22,7 @@ pub struct HttpRequest {
 impl HttpRequest {
     pub fn new(id: &str, password: &str, cache_capacity: usize, cache_duration: Duration) -> Self {
         let mut headers = HeaderMap::new();
-        let encoded = encode(&format!("{}:{}", id, password));
+        let encoded = encode(format!("{}:{}", id, password));
 
         headers.append(
             AUTHORIZATION,
