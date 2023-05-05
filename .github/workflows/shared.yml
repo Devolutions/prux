@@ -72,7 +72,7 @@ jobs:
 
       - name: Build and push
         id: docker_build
-        uses: docker/build-push-action@v2
+        uses: docker/build-push-action@v4
         with:
           file: dockerfile/Dockerfile.GH
           context: .
@@ -103,6 +103,6 @@ jobs:
           token: ${{ secrets.DEVOLUTIONSBOT_TOKEN }}
 
       - name: Trigger lucid deployment on staging
-        run: dv github trigger-workflow -b master -r lucid -f staging.yml -i deployOnly=true
+        run: dv github trigger-workflow -b master -r lucid -f staging.yml -i deploy_only=true
         env:
           GITHUB_TOKEN: ${{ secrets.GH_INFRA_PAT }}
