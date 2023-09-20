@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::net::IpAddr;
+use std::pin::Pin;
 
 use ::futures;
 use futures::task::{Context, Poll};
@@ -122,7 +123,7 @@ impl Proxy {
 impl Service<hyper::Request<hyper::Body>> for Proxy {
     type Response = Response<Body>;
     type Error = StringError;
-    type Future = Box<dyn Future<Output = Result<Response<Body>, Self::Error>> + Send + Unpin>;
+    type Future = Pin<Box<dyn Future<Output = Result<Response<Body>, Self::Error>> + Send>>;
 
     fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
@@ -152,7 +153,7 @@ impl Service<hyper::Request<hyper::Body>> for Proxy {
         let client = self.client.clone();
         let resolver = self.resolver.clone();
 
-        let fut = Box::pin(async move {
+        Box::pin(async move {
             let headers = if let Some(ip) = forwarded_ip {
                 let mut hdr_map = HashMap::new();
                 if valid_ip || valid_maxmind {
@@ -172,9 +173,6 @@ impl Service<hyper::Request<hyper::Body>> for Proxy {
 
             let request = construct_request(req, upstream_uri, headers);
             Ok(gen_transmit_fut(&client, request).await)
-        });
-
-        Box::new(fut)
-            as Box<dyn Future<Output = Result<Response<Body>, StringError>> + Send + Unpin>
+        })
     }
 }
