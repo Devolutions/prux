@@ -12,7 +12,12 @@ use crate::IpResolver;
 const PRUX_ADDR: &str = "Prux-Addr";
 const PRUX_CITY: &str = "Prux-City";
 const PRUX_COUNTRY: &str = "Prux-Country";
+const PRUX_PROVINCE: &str = "Prux-Province";
 const PRUX_COORD: &str = "Prux-Coord";
+const PRUX_COORD_ACCURACY: &str = "Prux-Coord-Accuracy";
+const PRUX_TIMEZONE: &str = "Prux-Timezone";
+const PRUX_ISP: &str = "Prux-ISP";
+const PRUX_NETWORK: &str = "Prux-Network";
 // lat / long
 static IPV6_FORWARDED_TRIM_VALUE: &[char] = &['"', '[', ']'];
 
@@ -37,6 +42,7 @@ pub async fn get_location_hdr(
     hdr_map: &mut HashMap<String, String>,
 ) -> Result<(), ()> {
     let json = resolver.lookup(&ip).await?;
+    dbg!(&json);
 
     if let Some(Some(city_name_en)) = json
         .get("city")
@@ -54,15 +60,39 @@ pub async fn get_location_hdr(
         hdr_map.insert(PRUX_COUNTRY.to_string(), country_name_en.to_string());
     }
 
-    if let Some((Some(lat), Some(long))) = json.get("location").map(|val| {
-        (
-            val.get("latitude")
-                .and_then(|l| l.as_f64().map(|n| n.to_string())),
-            val.get("longitude")
-                .and_then(|l| l.as_f64().map(|n| n.to_string())),
-        )
-    }) {
-        hdr_map.insert(PRUX_COORD.to_string(), format!("{},{}", lat, long));
+    if let Some(loc) = json.get("location") {
+        if let (Some(lat), Some(long)) = (
+            loc.get("latitude").and_then(|l| l.as_f64()),
+            loc.get("longitude").and_then(|l| l.as_f64()),
+        ) {
+            hdr_map.insert(PRUX_COORD.to_string(), format!("{},{}", lat, long));
+        }
+
+        if let Some(acc) = loc.get("accuracy_radius").and_then(|acc| acc.as_f64()) {
+            hdr_map.insert(PRUX_COORD_ACCURACY.to_string(), format!("{acc:.0}"));
+        }
+
+        if let Some(loc) = loc.get("time_zone").and_then(|tz| tz.as_str()) {
+            hdr_map.insert(PRUX_TIMEZONE.to_string(), loc.to_string());
+        }
+    }
+
+    if let Some(iso) = json
+        .get("subdivisions")
+        .and_then(|sub| sub.get("iso_code"))
+        .and_then(|iso| iso.as_str())
+    {
+        hdr_map.insert(PRUX_PROVINCE.to_string(), iso.to_string());
+    }
+
+    if let Some(traits) = json.get("traits") {
+        if let Some(isp) = traits.get("isp").and_then(|isp| isp.as_str()) {
+            hdr_map.insert(PRUX_ISP.to_string(), isp.to_string());
+        }
+
+        if let Some(network) = traits.get("network").and_then(|network| network.as_str()) {
+            hdr_map.insert(PRUX_NETWORK.to_string(), network.to_string());
+        }
     }
 
     Ok(())
