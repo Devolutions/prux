@@ -42,7 +42,6 @@ pub async fn get_location_hdr(
     hdr_map: &mut HashMap<String, String>,
 ) -> Result<(), ()> {
     let json = resolver.lookup(&ip).await?;
-    dbg!(&json);
 
     if let Some(Some(city_name_en)) = json
         .get("city")
