@@ -1,4 +1,5 @@
 name: Production - Build & Publish
+
 on:
   release:
     types: [published]
@@ -7,11 +8,9 @@ concurrency: prux_production
 
 jobs:
   production:
+    secrets: inherit
     uses: ./.github/workflows/shared.yml
     with:
       environment: production
-      ref: ${{ github.event.release.commit }}
+      ref: ${{ github.event.release.tag_name }}
       tag: ${{ github.event.release.tag_name }}
-    secrets:
-      DEVOLUTIONSBOT_TOKEN: ${{ secrets.DEVOLUTIONSBOT_TOKEN }}
-      DOCKER_HUB_ACCESS_TOKEN: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
