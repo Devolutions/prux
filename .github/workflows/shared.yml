@@ -74,27 +74,8 @@ jobs:
       - name: Show image digest
         run: echo ${{ steps.docker_build.outputs.digest }}
 
-  deploy-lucid:
-    environment: ${{ inputs.environment }}
-    if: ${{ inputs.environment == 'staging' }}
-    needs: build-image
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Check out Devolutions/actions
-        uses: actions/checkout@v4
-        with:
-          repository: Devolutions/actions
-          ref: v1
-          token: ${{ secrets.DEVOLUTIONSBOT_TOKEN }}
-          path: ./.github/workflows
-
-      - name: Install Toolbox
-        uses: ./.github/workflows/toolbox-install
-        with:
-          github_token: ${{ secrets.DEVOLUTIONSBOT_TOKEN }}
-
       - name: Trigger lucid deployment on staging
-        run: dv github trigger-workflow -b master -r lucid -f staging.yml -i deploy_only=true
+        if: ${{ inputs.environment == 'staging' }}
+        run: gh workflow run staging.yml --ref master --repo Devolutions/lucid -f deploy_only=true
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_INFRA_PAT }}
+          GITHUB_TOKEN: ${{ secrets.DEVOLUTIONSBOT_WRITE_TOKEN }}
