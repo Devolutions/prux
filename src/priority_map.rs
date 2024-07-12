@@ -85,7 +85,7 @@ impl<K: Eq + Hash + Clone + Debug, V: Debug> PriorityMap<K, V> {
 
     #[allow(unused)]
     pub fn contains_key(&self, key: &K) -> bool {
-        self.data.get(key).is_some()
+        self.data.contains_key(key)
     }
 
     pub fn check_prune(&mut self) {

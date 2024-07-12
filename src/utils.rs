@@ -89,7 +89,6 @@ pub enum UriPathSegmentMatcher {
 }
 
 impl UriPathSegmentMatcher {
-    ///
     pub fn new(segment: &str) -> Result<UriPathSegmentMatcher, String> {
         if segment.contains('/') {
             return Err("A path segment should not contain any /".to_string());
@@ -132,7 +131,6 @@ impl UriPathSegmentMatcher {
         }
     }
 
-    ///
     pub fn matches(&self, other: &str) -> bool {
         match self {
             UriPathSegmentMatcher::Static { segment: ref s } => s.eq(other),
@@ -170,9 +168,8 @@ pub enum RequestContinuation {
 
 /// Trait to convert string type to regular expressions
 pub trait ToRegex {
-    ///
     fn to_regex(&self) -> Result<::regex::Regex, ::regex::Error>;
-    ///
+
     fn as_str(&self) -> &str;
 }
 
