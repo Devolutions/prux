@@ -3,6 +3,17 @@ name: Production - Build & Publish
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      ref:
+        default: master
+        description: Commit SHA / branch to deploy
+        required: true
+        type: string
+      tag:
+        type: string
+        description: Tag
+        required: true
 
 concurrency: prux_production
 
@@ -12,5 +23,5 @@ jobs:
     uses: ./.github/workflows/shared.yml
     with:
       environment: production
-      ref: ${{ github.event.release.tag_name }}
-      tag: ${{ github.event.release.tag_name }}
+      ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.ref || github.event.release.tag_name }}
+      tag: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.event.release.tag_name }}
