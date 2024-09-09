@@ -34,14 +34,14 @@ jobs:
         run: cargo build --bin prux --release
 
       - name: Archive dockerfile
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.3.6
         with:
           name: dockerfile
           path: |
             Dockerfile.GH
 
       - name: Archive prux
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.3.6
         with:
           name: prux
           path: |
