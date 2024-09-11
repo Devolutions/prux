@@ -14,6 +14,30 @@ on:
         type: string
 
 jobs:
+  configs:
+    runs-on: ubuntu-latest
+    outputs:
+      commit-sha: ${{ steps.variable.outputs.commit-sha }}
+
+    steps:
+      - name: Check out ${{ github.repository }}
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Set variable
+        id: variable
+        run: |
+          sha=$(git rev-parse HEAD)
+          echo $sha
+          echo "commit-sha=$sha" >> $GITHUB_OUTPUT
+
+      - name: Archive dockerfile
+        uses: actions/upload-artifact@v4.3.6
+        with:
+          name: dockerfile
+          path: Dockerfile.GH
+
   build:
     runs-on: ubuntu-22.04
 
@@ -33,13 +57,6 @@ jobs:
       - name: Build prux
         run: cargo build --bin prux --release
 
-      - name: Archive dockerfile
-        uses: actions/upload-artifact@v4.3.6
-        with:
-          name: dockerfile
-          path: |
-            Dockerfile.GH
-
       - name: Archive prux
         uses: actions/upload-artifact@v4.3.6
         with:
@@ -47,35 +64,88 @@ jobs:
           path: |
             target/release/prux
 
-  build-image:
-    environment: ${{ inputs.environment }}
+  release:
+    if : ${{ github.event_name != 'workflow_dispatch' && inputs.environment == 'production' }}
     needs: build
     runs-on: ubuntu-latest
 
     steps:
+      - name: Check for required assets
+        id: check-assets
+        run: |
+          asset_count=$(gh release view ${{ inputs.tag }} --repo Devolutions/prux --json assets --jq '[.assets[] | select(.name == "dockerfile.tar.gz" or .name == "prux.tar.gz")] | length')
+
+          if [ "$asset_count" -eq 2 ]; then
+            echo "Assets are already present"
+            echo "all_assets_exist=true" >> $GITHUB_OUTPUT
+          else
+            echo "all_assets_exist=false" >> $GITHUB_OUTPUT
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Download all workflow run artifacts
+        if: ${{ steps.check-assets.outputs.all_assets_exist == 'false' }}
         uses: actions/download-artifact@v4
 
-      - name: Login to DockerHub
-        uses: docker/login-action@v3
+      - name: Compress artifacts
+        if: ${{ steps.check-assets.outputs.all_assets_exist == 'false' }}
+        run: |
+          tar -czvf dockerfile.tar.gz dockerfile/
+          tar -czvf prux.tar.gz prux/
+
+      - name: Upload assets to release
+        if: ${{ steps.check-assets.outputs.all_assets_exist == 'false' }}
+        uses: Devolutions/actions/upload-release-asset@v1
         with:
-          username: devolutionsbot
-          password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
+          files: dockerfile.tar.gz;prux.tar.gz
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ inputs.tag }}
 
-      - name: Build and push
-        id: docker_build
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: dockerfile/Dockerfile.GH
-          push: true
-          tags: devolutions/prux:${{ inputs.tag }}
+  build-image:
+    needs: [build]
+    secrets: inherit
+    uses: ./.github/workflows/build-image.yml
+    with:
+      tag: ${{ inputs.tag }}
 
-      - name: Show image digest
-        run: echo ${{ steps.docker_build.outputs.digest }}
+  deploy:
+    environment: ${{ inputs.environment }}
+    if: ${{ inputs.environment == 'staging' }}
+    needs: [build-image]
+    runs-on: ubuntu-latest
 
+    steps:
       - name: Trigger lucid deployment on staging
-        if: ${{ inputs.environment == 'staging' }}
         run: gh workflow run staging.yml --ref master --repo Devolutions/lucid -f deploy_only=true
         env:
           GITHUB_TOKEN: ${{ secrets.DEVOLUTIONSBOT_WRITE_TOKEN }}
+
+  report:
+    concurrency: prux
+    environment: report
+    if: ${{ !cancelled() && !failure() }}
+    needs: [configs, deploy]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out Devolutions/actions
+        uses: actions/checkout@v4
+        with:
+          repository: Devolutions/actions
+          ref: v1
+          token: ${{ secrets.DEVOLUTIONSBOT_TOKEN }}
+          path: ./.github/workflows
+
+      - name: Install Devolutions Toolbox
+        uses: ./.github/workflows/toolbox-install
+        with:
+          github_token: ${{ secrets.DEVOLUTIONSBOT_TOKEN }}
+
+      - name: Save deployment
+        run: dv github deployments set -r prux -e "${{ inputs.environment }}" -c "${{ needs.configs.outputs.commit-sha }}" -v "${{ inputs.tag }}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.DEVOLUTIONSBOT_WRITE_TOKEN }}
+
+      - name: Deployed commit ${{ needs.configs.outputs.commit-sha }}
+        run: echo "commit deployed -> ${{ needs.configs.outputs.commit-sha }}"

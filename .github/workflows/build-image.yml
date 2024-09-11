@@ -1,0 +1,66 @@
+name: build-image
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Version to deploy
+        default: latest
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
+      is_workflow_call:
+        default: true
+        type: boolean
+      
+jobs:
+  build-image:
+    runs-on: ubuntu-latest
+    environment: build
+
+    steps:
+      - name: Download files from release
+        if: ${{ inputs.is_workflow_call == '' }}
+        run: |
+          VERSION=${{ inputs.tag }}
+
+          if [[ "$VERSION" == "latest" ]]; then
+            VERSION=$(gh release view --json tagName --jq .tagName --repo devolutions/prux)
+          fi
+
+          gh release download $VERSION --repo devolutions/prux --pattern '*.tar.gz'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract release
+        if: ${{ inputs.is_workflow_call == '' }}
+        run: |
+          tar -xzvf dockerfile.tar.gz
+          tar -xzvf prux.tar.gz
+
+      - name: Download artifact from workflow
+        if: ${{ inputs.is_workflow_call }}
+        uses: actions/download-artifact@v4
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: devolutionsbot
+          password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
+
+      - name: Build and push image
+        id: docker_build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: dockerfile/Dockerfile.GH
+          push: true
+          tags: |
+            devolutions/prux:${{ inputs.tag }}
+
+      - name: Show image digest
+        run: echo ${{ steps.docker_build.outputs.digest }}
