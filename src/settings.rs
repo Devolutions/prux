@@ -3,6 +3,7 @@
 use clap::{crate_name, crate_version, Arg, Command};
 use config::{Config, ConfigError, Environment, File as ConfigFile};
 use log::LevelFilter;
+use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
 use std::fs::File;
 use std::io::Write;

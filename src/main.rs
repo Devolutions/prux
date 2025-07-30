@@ -1,6 +1,3 @@
-#[macro_use]
-extern crate serde_derive;
-
 use std::env;
 use std::io;
 use std::net;
@@ -9,9 +6,11 @@ use std::time::Duration;
 
 use dns_lookup::lookup_host;
 use env_logger::Builder;
-use hyper::server::conn::Http;
-use hyper::{Client, Uri};
+use hyper::Uri;
 use hyper_tls::HttpsConnector;
+use hyper_util::client::legacy::Client;
+use hyper_util::rt::TokioExecutor;
+use hyper_util::rt::TokioIo;
 use log::LevelFilter;
 use tokio::net::TcpListener;
 
@@ -63,9 +62,7 @@ async fn main() -> io::Result<()> {
         TcpListener::bind((net::Ipv4Addr::new(0, 0, 0, 0), config.listener.port)).await?;
 
     let https = HttpsConnector::new();
-    let client = Client::builder().build::<_, hyper::Body>(https);
-
-    let http = Http::new();
+    let client = Client::builder(TokioExecutor::new()).build(https);
 
     while let Ok((stream, addr)) = listener.accept().await {
         let client_hpr = client.clone();
@@ -94,24 +91,29 @@ async fn main() -> io::Result<()> {
             Vec::new()
         };
 
-        let http_proxy = http.serve_connection(
-            stream,
-            Proxy::new(
-                server_uri,
-                Some(source),
-                resolver,
-                client_hpr,
-                ip_inclusions,
-                maxmind_inclusions,
-                Some(exclusions),
-                config.server.forwarded_ip_header.clone(),
-                config.server.use_forwarded_ip_header_only,
-            ),
-        );
-
-        tokio::spawn(http_proxy);
+        let forwarded_ip_header = config.server.forwarded_ip_header.clone();
+        let fut = async move {
+            let http =
+                hyper_util::server::conn::auto::Builder::new(hyper_util::rt::TokioExecutor::new());
+            let _ = http
+                .serve_connection(
+                    TokioIo::new(stream),
+                    Proxy::new(
+                        server_uri,
+                        Some(source),
+                        resolver,
+                        client_hpr,
+                        ip_inclusions,
+                        maxmind_inclusions,
+                        Some(exclusions),
+                        forwarded_ip_header,
+                        config.server.use_forwarded_ip_header_only,
+                    ),
+                )
+                .await;
+        };
+        tokio::spawn(fut);
     }
-
     Ok(())
 }
 
