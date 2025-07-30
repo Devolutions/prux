@@ -55,7 +55,7 @@ impl Proxy {
                 .iter()
                 .filter_map(|p| {
                     UriPathMatcher::new(p)
-                        .map_err(|e| error!("Unable to construct included middleware route: {}", e))
+                        .map_err(|e| error!("Unable to construct included middleware route: {e}"))
                         .ok()
                 })
                 .collect(),
@@ -63,7 +63,7 @@ impl Proxy {
                 .iter()
                 .filter_map(|p| {
                     UriPathMatcher::new(p)
-                        .map_err(|e| error!("Unable to construct included middleware route: {}", e))
+                        .map_err(|e| error!("Unable to construct included middleware route: {e}"))
                         .ok()
                 })
                 .collect(),
@@ -72,7 +72,7 @@ impl Proxy {
                     .filter_map(|p| {
                         UriPathMatcher::new(p)
                             .map_err(|e| {
-                                error!("Unable to construct excluded middleware route: {}", e)
+                                error!("Unable to construct excluded middleware route: {e}")
                             })
                             .ok()
                     })

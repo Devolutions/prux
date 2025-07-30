@@ -27,11 +27,11 @@ pub struct HttpRequest {
 impl HttpRequest {
     pub fn new(id: &str, password: &str, cache_capacity: usize, cache_duration: Duration) -> Self {
         let mut headers = HeaderMap::new();
-        let encoded = encode(format!("{}:{}", id, password));
+        let encoded = encode(format!("{id}:{password}"));
 
         headers.append(
             AUTHORIZATION,
-            format!("Basic {}", encoded).parse().expect("should be ok"),
+            format!("Basic {encoded}").parse().expect("should be ok"),
         );
 
         let connector = hyper_tls::HttpsConnector::new();
@@ -51,15 +51,14 @@ impl HttpRequest {
     }
 
     pub async fn lookup(&self, addr: &IpAddr) -> Result<Arc<Value>, ()> {
-        let addr_str = format!("{}", addr);
+        let addr_str = format!("{addr}");
 
         if !self.inner.cache.read().await.contains_key(&addr_str) {
             let body = Empty::new();
             let mut req = hyper::Request::builder()
                 .method(hyper::Method::GET)
                 .uri(format!(
-                    "https://geoip.maxmind.com/geoip/v2.1/city/{}",
-                    addr_str
+                    "https://geoip.maxmind.com/geoip/v2.1/city/{addr_str}"
                 ))
                 .body(body)
                 .map_err(|_| ())?;

@@ -186,7 +186,7 @@ impl Settings {
                     }
                 }
                 wrong => {
-                    println!("Specified configuration format is invalid {}", wrong);
+                    println!("Specified configuration format is invalid {wrong}");
                     ::std::process::exit(1);
                 }
             }
@@ -196,7 +196,7 @@ impl Settings {
             use toml::to_string_pretty;
 
             if let Ok(pretty) = to_string_pretty(&settings) {
-                println!("------------------------PRUX CONFIGURATION------------------------\n{}\n---------------------------------------------------------------------", pretty);
+                println!("------------------------PRUX CONFIGURATION------------------------\n{pretty}\n---------------------------------------------------------------------");
             }
         }
 
