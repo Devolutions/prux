@@ -1,6 +1,6 @@
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
-use hyper::body::{Body, Incoming};
+use hyper::body::Incoming;
 use hyper::header::{HeaderName, HeaderValue};
 use hyper::{HeaderMap, Request, Response, StatusCode, Uri};
 use hyper_tls::HttpsConnector;
@@ -122,14 +122,11 @@ pub async fn gen_transmit_fut(
     }
 }
 
-pub fn construct_request<B>(
-    request: Request<B>,
+pub fn construct_request(
+    request: Request<Incoming>,
     new_uri: Uri,
     headers: Option<HashMap<String, String>>,
-) -> Request<B>
-where
-    B: Body,
-{
+) -> Request<Incoming> {
     let mut request = request;
     *request.uri_mut() = new_uri;
 
@@ -159,14 +156,11 @@ pub fn ip_is_global(ip: &IpAddr) -> bool {
     }
 }
 
-pub fn get_forwarded_ip<B>(
-    req: &Request<B>,
+pub fn get_forwarded_ip(
+    req: &Request<Incoming>,
     forwarded_ip_header: Option<&str>,
     use_forwarded_ip_header_only: bool,
-) -> Option<IpAddr>
-where
-    B: Body,
-{
+) -> Option<IpAddr> {
     get_forwarded_ip_from_headers(
         req.headers(),
         forwarded_ip_header,
