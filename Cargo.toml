@@ -3,11 +3,12 @@ name = "prux"
 version = "2.1.2"
 authors = ["richerarc <richer.arc@gmail.com>", "LucFauvel <luc.fauvel@hotmail.com>"]
 edition = "2021"
+description = "A simple identity server"
 
 [dependencies]
 base64 = "0.13.0"
 bytes = "1.1.0"
-clap = { version = "3.1.15", features = ["cargo"] }
+clap = { version = "4", features = ["derive"] }
 config = { version = "0.13.1", features = ["toml"] }
 dns-lookup = "1.0.8"
 env_logger = "0.9.0"

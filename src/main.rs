@@ -31,7 +31,7 @@ async fn main() -> io::Result<()> {
     let config = settings::Settings::load().expect("Configuration errors are fatal");
 
     let mut builder = Builder::new();
-    builder.filter(None, config.level_filter());
+    builder.filter(None, config.loglevel);
     builder.filter(Some("tokio_io"), LevelFilter::Off);
     builder.filter(Some("tokio_core"), LevelFilter::Off);
     builder.filter(Some("tokio_reactor"), LevelFilter::Off);
