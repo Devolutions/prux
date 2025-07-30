@@ -6,6 +6,7 @@ use hyper::{HeaderMap, Request, Response, StatusCode, Uri};
 use hyper_tls::HttpsConnector;
 use hyper_util::client::legacy::connect::HttpConnector;
 use hyper_util::client::legacy::Client;
+use log::error;
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::str::FromStr;
@@ -108,7 +109,8 @@ pub async fn gen_transmit_fut(
 ) -> Response<ResponseBody> {
     match client.request(req).await {
         Ok(response) => response.map(|b| b.map_err(Box::from).boxed()),
-        Err(_) => {
+        Err(e) => {
+            error!("hyper error: {e}");
             let body = Full::new(Bytes::from("Something went wrong, please try again later."))
                 .map_err(Box::from)
                 .boxed();
