@@ -62,5 +62,14 @@ jobs:
           tags: |
             devolutions/prux:${{ inputs.tag }}
 
+      - name: Docker Scout
+        uses: docker/scout-action@v1
+        with:
+          command: cves
+          image: devolutions/prux:${{ inputs.tag }}
+          ignore-base: true
+          only-severities: critical,high
+          summary: true
+
       - name: Show image digest
         run: echo ${{ steps.docker_build.outputs.digest }}
