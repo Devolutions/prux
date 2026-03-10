@@ -64,7 +64,7 @@ pub async fn get_location_hdr(
             loc.get("latitude").and_then(|l| l.as_f64()),
             loc.get("longitude").and_then(|l| l.as_f64()),
         ) {
-            hdr_map.insert(PRUX_COORD.to_string(), format!("{},{}", lat, long));
+            hdr_map.insert(PRUX_COORD.to_string(), format!("{lat},{long}"));
         }
 
         if let Some(acc) = loc.get("accuracy_radius").and_then(|acc| acc.as_f64()) {
