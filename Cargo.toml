@@ -5,24 +5,24 @@ authors = ["richerarc <richer.arc@gmail.com>", "LucFauvel <luc.fauvel@hotmail.co
 edition = "2021"
 
 [dependencies]
-base64 = "0.13.0"
-bytes = "1.1.0"
-clap = { version = "3.1.15", features = ["cargo"] }
-config = { version = "0.13.1", features = ["toml"] }
-dns-lookup = "1.0.8"
-env_logger = "0.9.0"
-futures = "0.3.21"
-futures-util = "0.3.21"
-httparse = "1.7.1"
-hyper = { version = "0.14.18", features = ["server", "client", "http1", "http2"] }
-hyper-tls = "0.5.0"
+base64 = "0.22.1"
+bytes = "1.10.1"
+clap = { version = "4.5.42", features = ["cargo"] }
+config = { version = "0.15.13", features = ["toml"] }
+dns-lookup = "2.0.4"
+env_logger = "0.11.8"
+futures = "0.3.31"
+futures-util = "0.3.31"
+httparse = "1.10.1"
+hyper = { version = "1.6.0", features = ["server", "client", "http1", "http2"] }
+hyper-tls = "0.6.0"
 log = "0.4"
-parking_lot = "0.12.0"
-priority-queue = "1.2.1"
-regex = "1.5.5"
+parking_lot = "0.12.4"
+priority-queue = "2.5.0"
+regex = "1.11.1"
 serde = "1.0"
 serde_derive = "1.0"
 serde_json = "1.0"
-serde_yaml = "0.8"
-tokio = { version = ">=1.18.4", features = ["macros", "rt-multi-thread"] }
-toml = "0.5"
+serde_yaml = "0.9"
+tokio = { version = "1.47", features = ["macros", "rt-multi-thread"] }
+toml = "0.9"
