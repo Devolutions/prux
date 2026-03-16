@@ -21,7 +21,7 @@ jobs:
 
     steps:
       - name: Check out ${{ github.repository }}
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ inputs.ref }}
 
@@ -33,7 +33,7 @@ jobs:
           echo "commit-sha=$sha" >> $GITHUB_OUTPUT
 
       - name: Archive dockerfile
-        uses: actions/upload-artifact@v4.3.6
+        uses: actions/upload-artifact@v7
         with:
           name: dockerfile
           path: Dockerfile.GH
@@ -43,11 +43,11 @@ jobs:
 
     steps:
       - name: Check out ${{ github.repository }}
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ inputs.ref }}
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/**
@@ -58,7 +58,7 @@ jobs:
         run: cargo build --bin prux --release
 
       - name: Archive prux
-        uses: actions/upload-artifact@v4.3.6
+        uses: actions/upload-artifact@v7
         with:
           name: prux
           path: |
@@ -86,7 +86,7 @@ jobs:
 
       - name: Download all workflow run artifacts
         if: ${{ steps.check-assets.outputs.all_assets_exist == 'false' }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
 
       - name: Compress artifacts
         if: ${{ steps.check-assets.outputs.all_assets_exist == 'false' }}
@@ -130,7 +130,7 @@ jobs:
 
     steps:
       - name: Check out Devolutions/actions
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: Devolutions/actions
           ref: v1

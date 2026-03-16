@@ -44,7 +44,7 @@ jobs:
 
       - name: Download artifact from workflow
         if: ${{ inputs.is_workflow_call }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -68,9 +68,9 @@ jobs:
             devolutions/prux:${{ inputs.tag }}
 
       - name: Install Cosign
-        uses: sigstore/cosign-installer@v3.8.0
+        uses: sigstore/cosign-installer@v3.10.1
         with:
-          cosign-release: v2.4.1
+          cosign-release: v2.6.1
 
       - name: Sign image with Cosign
         run: |
