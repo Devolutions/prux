@@ -173,7 +173,7 @@ pub trait ToRegex {
     fn as_str(&self) -> &str;
 }
 
-impl<'a> ToRegex for &'a str {
+impl ToRegex for &str {
     fn to_regex(&self) -> Result<::regex::Regex, ::regex::Error> {
         ::regex::Regex::new(self)
     }
