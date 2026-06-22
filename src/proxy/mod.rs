@@ -3,12 +3,15 @@ use std::net::IpAddr;
 use std::pin::Pin;
 
 use ::futures;
-use futures::task::{Context, Poll};
+use bytes::Bytes;
 use futures::Future;
-use hyper::client::HttpConnector;
+use http_body_util::combinators::BoxBody;
+use hyper::body::Incoming;
 use hyper::service::Service;
-use hyper::{Body, Client, Response, Uri};
+use hyper::{Request, Response, Uri};
 use hyper_tls::HttpsConnector;
+use hyper_util::client::legacy::connect::HttpConnector;
+use hyper_util::client::legacy::Client;
 use log::error;
 
 use crate::proxy::utils::*;
@@ -17,11 +20,13 @@ use crate::IpResolver;
 
 pub mod utils;
 
+type ResponseBody = BoxBody<Bytes, Box<dyn std::error::Error + Send + Sync>>;
+
 pub struct Proxy {
     pub upstream_uri: Uri,
     pub source_ip: Option<IpAddr>,
     pub resolver: IpResolver,
-    pub client: Client<HttpsConnector<HttpConnector>>,
+    pub client: Client<HttpsConnector<HttpConnector>, Incoming>,
     pub ip_path_inclusions: Vec<UriPathMatcher>,
     pub maxmind_path_inclusions: Vec<UriPathMatcher>,
     pub path_exclusions: Option<Vec<UriPathMatcher>>,
@@ -35,7 +40,7 @@ impl Proxy {
         upstream_uri: Uri,
         source_ip: Option<IpAddr>,
         resolver: IpResolver,
-        client: Client<HttpsConnector<HttpConnector>>,
+        client: Client<HttpsConnector<HttpConnector>, Incoming>,
         ip_inclusions: Vec<String>,
         maxmind_inclusions: Vec<String>,
         exclusions: Option<Vec<String>>,
@@ -50,7 +55,7 @@ impl Proxy {
                 .iter()
                 .filter_map(|p| {
                     UriPathMatcher::new(p)
-                        .map_err(|e| error!("Unable to construct included middleware route: {}", e))
+                        .map_err(|e| error!("Unable to construct included middleware route: {e}"))
                         .ok()
                 })
                 .collect(),
@@ -58,7 +63,7 @@ impl Proxy {
                 .iter()
                 .filter_map(|p| {
                     UriPathMatcher::new(p)
-                        .map_err(|e| error!("Unable to construct included middleware route: {}", e))
+                        .map_err(|e| error!("Unable to construct included middleware route: {e}"))
                         .ok()
                 })
                 .collect(),
@@ -67,7 +72,7 @@ impl Proxy {
                     .filter_map(|p| {
                         UriPathMatcher::new(p)
                             .map_err(|e| {
-                                error!("Unable to construct excluded middleware route: {}", e)
+                                error!("Unable to construct excluded middleware route: {e}")
                             })
                             .ok()
                     })
@@ -120,16 +125,12 @@ impl Proxy {
     }
 }
 
-impl Service<hyper::Request<hyper::Body>> for Proxy {
-    type Response = Response<Body>;
+impl Service<Request<Incoming>> for Proxy {
+    type Response = Response<ResponseBody>;
     type Error = StringError;
-    type Future = Pin<Box<dyn Future<Output = Result<Response<Body>, Self::Error>> + Send>>;
+    type Future = Pin<Box<dyn Future<Output = Result<Response<ResponseBody>, Self::Error>> + Send>>;
 
-    fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        Poll::Ready(Ok(()))
-    }
-
-    fn call(&mut self, req: hyper::Request<hyper::Body>) -> Self::Future {
+    fn call(&self, req: Request<Incoming>) -> Self::Future {
         let mut upstream_parts = self.upstream_uri.clone().into_parts();
         upstream_parts.path_and_query = req.uri().path_and_query().cloned();
 

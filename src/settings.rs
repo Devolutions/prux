@@ -3,6 +3,7 @@
 use clap::{crate_name, crate_version, Arg, Command};
 use config::{Config, ConfigError, Environment, File as ConfigFile};
 use log::LevelFilter;
+use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
 use std::fs::File;
 use std::io::Write;
@@ -185,7 +186,7 @@ impl Settings {
                     }
                 }
                 wrong => {
-                    println!("Specified configuration format is invalid {}", wrong);
+                    println!("Specified configuration format is invalid {wrong}");
                     ::std::process::exit(1);
                 }
             }
@@ -195,7 +196,7 @@ impl Settings {
             use toml::to_string_pretty;
 
             if let Ok(pretty) = to_string_pretty(&settings) {
-                println!("------------------------PRUX CONFIGURATION------------------------\n{}\n---------------------------------------------------------------------", pretty);
+                println!("------------------------PRUX CONFIGURATION------------------------\n{pretty}\n---------------------------------------------------------------------");
             }
         }
 

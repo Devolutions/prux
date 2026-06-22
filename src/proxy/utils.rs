@@ -1,13 +1,19 @@
-use hyper::client::HttpConnector;
+use bytes::Bytes;
+use http_body_util::{BodyExt, Full};
+use hyper::body::Incoming;
 use hyper::header::{HeaderName, HeaderValue};
-use hyper::{Body, Client, HeaderMap, Request, Response, Uri};
+use hyper::{HeaderMap, Request, Response, StatusCode, Uri};
 use hyper_tls::HttpsConnector;
+use hyper_util::client::legacy::connect::HttpConnector;
+use hyper_util::client::legacy::Client;
 use log::error;
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::str::FromStr;
 
 use crate::IpResolver;
+
+use super::ResponseBody;
 
 const PRUX_ADDR: &str = "Prux-Addr";
 const PRUX_CITY: &str = "Prux-City";
@@ -64,7 +70,7 @@ pub async fn get_location_hdr(
             loc.get("latitude").and_then(|l| l.as_f64()),
             loc.get("longitude").and_then(|l| l.as_f64()),
         ) {
-            hdr_map.insert(PRUX_COORD.to_string(), format!("{},{}", lat, long));
+            hdr_map.insert(PRUX_COORD.to_string(), format!("{lat},{long}"));
         }
 
         if let Some(acc) = loc.get("accuracy_radius").and_then(|acc| acc.as_f64()) {
@@ -98,29 +104,29 @@ pub async fn get_location_hdr(
 }
 
 pub async fn gen_transmit_fut(
-    client: &Client<HttpsConnector<HttpConnector>>,
-    req: Request<Body>,
-) -> Response<Body> {
+    client: &Client<HttpsConnector<HttpConnector>, Incoming>,
+    req: Request<Incoming>,
+) -> Response<ResponseBody> {
     match client.request(req).await {
-        Ok(response) => response,
+        Ok(response) => response.map(|b| b.map_err(Box::from).boxed()),
         Err(e) => {
-            error!("hyper error: {}", e);
-            let mut response =
-                Response::new(Body::from("Something went wrong, please try again later."));
-            let (mut parts, body) = response.into_parts();
-            parts.status = hyper::StatusCode::BAD_GATEWAY;
-            response = Response::from_parts(parts, body);
-
-            response
+            error!("hyper error: {e}");
+            let body = Full::new(Bytes::from("Something went wrong, please try again later."))
+                .map_err(Box::from)
+                .boxed();
+            Response::builder()
+                .status(StatusCode::BAD_GATEWAY)
+                .body(body)
+                .unwrap()
         }
     }
 }
 
 pub fn construct_request(
-    request: Request<Body>,
+    request: Request<Incoming>,
     new_uri: Uri,
     headers: Option<HashMap<String, String>>,
-) -> Request<Body> {
+) -> Request<Incoming> {
     let mut request = request;
     *request.uri_mut() = new_uri;
 
@@ -151,7 +157,7 @@ pub fn ip_is_global(ip: &IpAddr) -> bool {
 }
 
 pub fn get_forwarded_ip(
-    req: &Request<Body>,
+    req: &Request<Incoming>,
     forwarded_ip_header: Option<&str>,
     use_forwarded_ip_header_only: bool,
 ) -> Option<IpAddr> {
