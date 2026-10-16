@@ -9,6 +9,9 @@ concurrency: prux_staging
 
 jobs:
   staging:
+    permissions:
+      contents: write
+      id-token: write
     secrets: inherit
     uses: ./.github/workflows/shared.yml
     with:

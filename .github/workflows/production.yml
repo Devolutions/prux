@@ -19,6 +19,9 @@ concurrency: prux_production
 
 jobs:
   production:
+    permissions:
+      contents: write
+      id-token: write
     secrets: inherit
     uses: ./.github/workflows/shared.yml
     with:
